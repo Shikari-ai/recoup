@@ -110,12 +110,12 @@ guardrail violations across every seed and arm: 0
 ```
 
 Lift is heavy-tailed — recovered value is dominated by a few large B2B
-receivables — so the full range is reported, including the seed where the agent
-loses, rather than the best one.
+receivables — so the spread is wide (min +3.2%, max +54.7%) even with every seed
+positive, and the full range is reported rather than the best one.
 
 ### The classifier is measured by consequence, not by accuracy
 
-Overall taxonomy accuracy is **97.0%** on held-out events (macro-F1 0.940), and
+Overall taxonomy accuracy is **96.9%** on held-out events (macro-F1 0.9516), and
 that number is nearly useless on its own — the classes are imbalanced and their
 errors are wildly asymmetric. So `recoup backtest` splits every misclassification
 by what it would actually cause:
@@ -124,9 +124,9 @@ by what it would actually cause:
   errors by consequence, not by count:
     dangerous          0   terminal failure read as actionable
     over-cautious      0   actionable failure read as terminal
-    benign            71   wrong class, same recovery strategy
+    benign            75   wrong class, same recovery strategy
 
-  TERMINAL RECALL  1.0000   (26 terminal failures in the slice)
+  TERMINAL RECALL  1.0000   (33 terminal failures in the slice)
 ```
 
 `insufficient_funds` read as `gateway_error` costs a wasted attempt.

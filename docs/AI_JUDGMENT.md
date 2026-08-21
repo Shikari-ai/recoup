@@ -45,8 +45,10 @@ through an LLM would make the hottest path in the system slower, more
 expensive, non-deterministic and unauditable — you could not tell a merchant
 why their customer was retried, because the answer might differ between runs.
 
-The table gets **97.6%** of held-out events exactly right. The model's job is
-the remaining 2.4%.
+The table gets **96.9%** of held-out events exactly right, at a macro-F1 of
+0.952, and — the number that actually matters — a **terminal recall of 1.000**:
+not one revoked mandate, flagged payment or stolen card was misread as something
+the agent may act on. The model's job is the remaining ~2.5%.
 
 ### Retry timing and action choice — statistics, not a model
 
@@ -59,7 +61,7 @@ Logistic regression instead — and specifically *not* something bigger. The
 policy does not need a ranking of actions; it needs calibrated probabilities,
 because it multiplies them by rupee amounts. A model that ranks perfectly but
 says 0.9 where the truth is 0.4 will chase receivables that were never coming
-back, and the error compounds across a batch. Measured ECE is **0.013**.
+back, and the error compounds across a batch. Measured ECE is **0.011**.
 
 The second reason is explainability. Every coefficient is readable, and
 `contributions()` returns the *exact* signed decomposition of the logit — not
@@ -84,7 +86,7 @@ failure mode is a system that reliably explains decisions it did not make.
 ### 1. Triage of unmapped error codes — `recoup/llm/triage.py`
 
 **The problem.** Real gateways ship new reason codes without warning, localise
-them, and sometimes return free text. In the simulated feed ~2.4% of events
+them, and sometimes return free text. In the simulated feed ~2.5% of events
 carry a string the table cannot match, including `"Kripya baad mein prayaas
 karein"` — Hinglish for "please try again later", which is an
 issuer-availability message. A table cannot read that. A model can. This is

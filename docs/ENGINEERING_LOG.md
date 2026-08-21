@@ -379,6 +379,41 @@ did, so a leak and a dead signal looked identical to success for the whole
 build. The arithmetic that killed it — failures per issuer per day versus the
 detector's window — takes two minutes and should have come before the code.
 
+**Coda, found a day later.** Removing those features moved a number I had already
+published in the README. The learning curve had put the reliable crossover at
+**~2,000 receivables**: below that the learned policy lost badly to the rulebook,
+and I had written the obvious explanation — a model with ~80 features needs
+thousands of rows.
+
+That explanation was wrong. Re-running the curve without the health features:
+
+```
+  events  train rows   median      min      max   wins
+     120         153   +12.2%    -1.7%  +127.4%    3/4
+     200         256    +2.3%   -27.4%   +28.6%    3/4
+     300         392    +5.2%    +2.5%   +60.3%    4/4
+     500         654   +17.9%    +8.3%   +27.3%    4/4
+```
+
+The crossover fell from ~2,000 to **~300**. The model had never been
+data-starved; it was feature-poisoned, and noise does the most damage exactly
+where there are fewest rows to average it away. Every documented mention of the
+old threshold — README, EVALUATION, the API, the dashboard warning, the CLI
+default — had to be corrected.
+
+Two lessons, and the second is the one I will actually reuse:
+
+1. **A model that appears to need implausibly much data to beat a rulebook is
+   worth auditing for bad features before buying more data.** The cheap check
+   comes first.
+2. **A derived claim outlives the thing it was derived from.** The crossover was
+   a *consequence* of the feature set, but it lived in five files as a bare
+   number with no link back. When the cause changed, nothing flagged the
+   consequence. `scripts/verify_docs.py` now executes every documented command,
+   which catches stale commands — it does not catch stale numbers, and I do not
+   have a good answer for that beyond re-deriving them from committed artefacts,
+   which is what `results/` is for.
+
 ---
 
 ## Two smaller ones

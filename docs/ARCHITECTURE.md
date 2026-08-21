@@ -37,8 +37,8 @@ Simulator ─────────-┘                          │
                                                ▼
                         ┌──────────────────────────────────────────┐
                         │ DIAGNOSE                                 │
-                        │  taxonomy.py    table, 97.6% coverage    │
-                        │  llm/triage.py  the other 2.4%           │
+                        │  taxonomy.py    table, 96.9% coverage    │
+                        │  llm/triage.py  the other 2.5%           │
                         │  issuer_health.py  is the bank down?     │
                         └──────────────────┬───────────────────────┘
                                            ▼
