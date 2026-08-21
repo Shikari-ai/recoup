@@ -239,14 +239,6 @@ class RiskEvent:
     deadline: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def is_mandate(self) -> bool:
-        return self.rail in MANDATE_RAILS
-
-    @property
-    def is_card_network(self) -> bool:
-        return self.rail in CARD_NETWORK_RAILS
-
 
 @dataclass(frozen=True, slots=True)
 class GuardrailVerdict:
@@ -307,20 +299,6 @@ class Decision:
     @property
     def allowed(self) -> bool:
         return all(g.allowed for g in self.guardrails)
-
-
-@dataclass(slots=True)
-class Outcome:
-    """What actually happened after an action executed."""
-
-    event_id: str
-    action_kind: ActionKind
-    executed_at: datetime
-    recovered: bool
-    amount_recovered_paise: int = 0
-    #: Cost of taking the action (gateway fee, SMS/WhatsApp cost) in paise.
-    cost_paise: int = 0
-    detail: str = ""
 
 
 def to_jsonable(obj: Any) -> Any:

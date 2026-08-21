@@ -500,3 +500,27 @@ def test_every_arm_shares_one_classifier(pack):
     assert "classifier=classifier" in src or "classifier)" in src
     for arm in ("NoActionPolicy", "FixedRetryPolicy", "RuleBasedPolicy"):
         assert f"{arm}(p, s, g, classifier)" in src, f"{arm} does not share the classifier"
+
+
+def test_snapshot_all_reports_tracked_issuers_worst_first():
+    """Operator view of the health monitor.
+
+    Kept although the monitor is inert at this project's traffic density (see
+    docs/EVALUATION.md): the algorithm is correct and would earn its place at
+    real per-issuer volumes, so it is tested rather than deleted. It is
+    deliberately NOT exposed as an API endpoint -- an endpoint that always
+    returns nothing is worse than no endpoint.
+    """
+    h = IssuerHealthMonitor(min_samples=4)
+    for i in range(30):
+        h.observe("HDFC", Rail.UPI_COLLECT, True, T0 + timedelta(minutes=i))
+    for i in range(30):
+        h.observe("SBI", Rail.CARD, False, T0 + timedelta(minutes=i))
+
+    snaps = h.snapshot_all(T0 + timedelta(minutes=31))
+    assert {(s.issuer, s.rail) for s in snaps} == {
+        ("HDFC", Rail.UPI_COLLECT), ("SBI", Rail.CARD)
+    }
+    # Sorted worst first, so an operator sees trouble at the top.
+    assert snaps[0].issuer == "SBI"
+    assert snaps[0].degraded and not snaps[-1].degraded

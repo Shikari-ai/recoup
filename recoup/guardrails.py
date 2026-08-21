@@ -437,6 +437,3 @@ class GuardrailEngine:
         _merchant_daily_comms_cost,
     )
 
-
-def blocking_reasons(verdicts: list[GuardrailVerdict]) -> list[str]:
-    return [f"{v.rule}: {v.reason}" for v in verdicts if not v.allowed]

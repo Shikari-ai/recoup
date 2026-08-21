@@ -34,7 +34,6 @@ from ..domain import (
     Decision,
     FailureClass,
     RiskEvent,
-    rupees,
 )
 from ..guardrails import GuardrailEngine, action_cost
 from ..issuer_health import IssuerHealthMonitor
@@ -125,10 +124,6 @@ class RunResult:
     @property
     def recovery_rate(self) -> float:
         return self.recovered_count / self.n_events if self.n_events else 0.0
-
-    @property
-    def value_recovery_rate(self) -> float:
-        return self.recovered_paise / self.at_risk_paise if self.at_risk_paise else 0.0
 
     @property
     def cost_per_rupee_recovered(self) -> float:
@@ -489,23 +484,3 @@ def audit_executed_actions(
         if entry.is_comms and ev.rail in MANDATE_RAILS:
             replay.mark_notice_sent(ev.event_id, entry.executed_at)
     return violations
-
-
-def format_result(r: RunResult) -> str:
-    """One-arm summary, for the CLI."""
-    return "\n".join(
-        [
-            f"  policy              {r.policy_name}",
-            f"  events              {r.n_events:,}",
-            f"  at risk             {rupees(r.at_risk_paise)}",
-            f"  recovered (gross)   {rupees(r.recovered_paise)}  ({r.recovery_rate:.1%} of events)",
-            f"  of which organic    {rupees(r.organic_paise)}  ({r.organic_count:,} events)",
-            f"  attributed to agent {rupees(r.attributed_paise)}  ({r.attributed_count:,} events)",
-            f"  action cost         {rupees(r.cost_paise)}",
-            f"  net                 {rupees(r.net_paise)}",
-            f"  actions             {r.total_actions:,}  "
-            f"(debits {r.debit_attempts:,}, messages {r.comms_sent:,})",
-            f"  late blocks         {r.late_blocks:,}",
-            f"  violations          {len(r.violations)}",
-        ]
-    )

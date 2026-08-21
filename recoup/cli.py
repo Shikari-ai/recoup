@@ -156,6 +156,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
     entries = AuditLedger.load(args.file)
     v = verify_entries(entries)
     _p(f"ledger: {len(entries)} records -- {'INTACT' if v.ok else 'BROKEN'}: {v.detail}")
+    if not v.ok:
+        # Say this before printing the trail. A broken chain means the records
+        # below may have been altered, and a reader who sees them first will
+        # have already believed them.
+        _p(f"  WARNING: chain broken at seq {v.broken_at}. Treat the trail below "
+           f"as unverified.")
     _p()
     _p(explain_event(entries, args.event_id))
     return 0 if v.ok else 1

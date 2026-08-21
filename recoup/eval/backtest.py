@@ -80,14 +80,6 @@ class BacktestResult:
     def agent(self) -> RunResult:
         return self.arms["recoup"]
 
-    @property
-    def judgement_lift(self) -> float:
-        """Lift over an arm that spends the same budget without judgement.
-
-        The cleanest available answer to "is this intelligence or effort?".
-        """
-        return self.lift_vs("exhaustive_random")
-
     def lift_vs(self, other: str) -> float:
         """Relative uplift in agent-attributed recovered value."""
         base = self.arms[other].attributed_paise

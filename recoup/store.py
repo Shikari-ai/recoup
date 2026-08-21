@@ -120,9 +120,6 @@ class RecoveryStore:
 
     # -- reads -------------------------------------------------------------
 
-    def event_actions(self, event_id: str) -> list[ActionLogEntry]:
-        return self._by_event.get(event_id, [])
-
     def action_count(self, event_id: str) -> int:
         return len(self._by_event.get(event_id, ()))
 
@@ -156,18 +153,12 @@ class RecoveryStore:
     def merchant_comms_cost_on(self, merchant_id: str, day: date) -> int:
         return self._merchant_day_comms_cost.get((merchant_id, day), 0)
 
-    def first_seen(self, event_id: str) -> datetime | None:
-        return self._first_seen.get(event_id)
-
     def age(self, event_id: str, now: datetime) -> timedelta:
         seen = self._first_seen.get(event_id)
         return now - seen if seen else timedelta(0)
 
     def notice_sent_at(self, event_id: str) -> datetime | None:
         return self._notice_sent.get(event_id)
-
-    def is_resolved(self, event_id: str) -> bool:
-        return event_id in self._resolved
 
     # -- introspection -----------------------------------------------------
 
