@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        run: pip install -e '.[dev]'
+
+      # The core engine must work with nothing installed. If this breaks, the
+      # "clone and run" promise in the README is no longer true.
+      - name: Core engine runs on the standard library alone
+        run: python -m recoup backtest --events 400 --quiet
+
+      - name: Tests
+        run: pytest tests/ -q
+
+      # Reproducibility is the basis of every number reported in the README,
+      # and it broke once already (see docs/ENGINEERING_LOG.md §2). A set of
+      # str-Enums iterating in hash-randomised order fed the outage RNG, so the
+      # same seed produced a different world each run. This job re-runs the
+      # pipeline under two different hash seeds and demands identical output.
+      - name: Reproducible under differing PYTHONHASHSEED
+        run: |
+          PYTHONHASHSEED=0     python -m recoup backtest --events 800 --quiet > a.txt
+          PYTHONHASHSEED=99991 python -m recoup backtest --events 800 --quiet > b.txt
+          diff a.txt b.txt && echo "identical across hash seeds"
