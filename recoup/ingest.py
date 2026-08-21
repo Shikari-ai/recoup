@@ -69,6 +69,8 @@ def verify_signature(raw_body: bytes, signature: str, secret: str) -> bool:
 def _entity(payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """Pull the primary entity out of a webhook payload."""
     body = payload.get("payload") or {}
+    if not isinstance(body, dict):
+        raise WebhookError(f"payload.payload must be an object, got {type(body).__name__}")
     for key in ("payment", "subscription", "invoice", "order", "payment_link"):
         node = body.get(key) or {}
         ent = node.get("entity")
@@ -126,6 +128,15 @@ def from_webhook(
     customer: CustomerContext | None = None,
 ) -> RiskEvent:
     """Normalise a Razorpay webhook into a RiskEvent."""
+    # `null`, `[]` and `"text"` are all valid JSON and none of them are objects.
+    # Without this guard they reach .get() and raise AttributeError, which on an
+    # internet-facing endpoint means a 500 and a stack trace for anyone who
+    # posts two bytes.
+    if not isinstance(payload, dict):
+        raise WebhookError(
+            f"payload must be a JSON object, got {type(payload).__name__}"
+        )
+
     event_name = str(payload.get("event") or "")
     if not event_name:
         raise WebhookError("payload has no 'event' field")

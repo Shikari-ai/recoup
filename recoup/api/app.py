@@ -30,6 +30,8 @@ from ..policypack import load_pack
 
 
 def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
+    from contextlib import asynccontextmanager
+
     from fastapi import FastAPI, Header, Request
     from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -40,11 +42,17 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
     from ..sim.generator import ScenarioConfig, generate
 
     pack = load_pack()
-    app = FastAPI(title="Recoup", version="0.1.0", docs_url="/docs")
-
     state: dict[str, Any] = {}
 
-    @app.on_event("startup")
+    @asynccontextmanager
+    async def lifespan(_app):
+        _warm()
+        yield
+
+    app = FastAPI(
+        title="Recoup", version="0.1.0", docs_url="/docs", lifespan=lifespan
+    )
+
     def _warm() -> None:
         cfg = ScenarioConfig(n_events=events, days=45, seed=seed)
         result = backtest(cfg, pack, verbose=False)
