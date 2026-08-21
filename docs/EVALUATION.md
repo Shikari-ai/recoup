@@ -414,6 +414,63 @@ so the two components can be judged separately. Blending them would make it
 impossible to tell whether a good number came from the table being comprehensive
 or the model covering for it.
 
+Both are reported, because they answer different questions:
+
+```
+  lookup table alone     0.9688 accuracy, 0.0254 unmapped
+  table + LLM triage     0.9900 accuracy, 0.0042 unmapped   (+0.0212)
+  triage accepted        51/61 unmapped codes, 51 correct (100.0% precision)
+  dangerous errors       0
+```
+
+The table's number measures lookup coverage; the pipeline's measures what the
+agent actually acts on. **End-to-end classification is 99.0%.** And the more
+informative fact is that *every* remaining table error traces to a
+deliberately-novel code: the table is 100% correct on everything it was designed
+to cover, and triage resolves the tail it exists for without a single incorrect
+acceptance.
+
+### The achievable ceiling, and why AUC 0.77 is close to it
+
+An AUC of 0.765 invites "why not higher?". The answer is that it nearly cannot
+be, and establishing that took one experiment that should have preceded any
+attempt to improve the model.
+
+Outcomes are **Bernoulli draws** at a latent probability. An oracle knowing that
+probability exactly still misranks two receivables whenever their coin flips
+disagree with their probabilities, so there is a hard ceiling. `scripts/ceiling.py`
+measures three things on identical held-out rows:
+
+```
+  seed   rows   base   ORACLE  observable    MODEL     ECE  captured
+    42  2,169  0.212   0.7850      0.7827   0.7732  0.0183    95.9%
+    77  2,180  0.216   0.7696      0.7706   0.7467  0.0164    91.5%
+   112  2,165  0.210   0.7800      0.7752   0.7624  0.0227    93.7%
+   147  2,176  0.212   0.7857      0.7840   0.7731  0.0232    95.6%
+
+oracle ceiling      median 0.7825
+model               median 0.7678
+signal captured     median 94.7% of the achievable ranking signal
+```
+
+* **ORACLE** — the world's own true probability, scored on the same rows. No
+  model can pass this.
+* **OBSERVABLE-ONLY** — the oracle with the latent per-customer traits divided
+  out. It sits essentially on top of the oracle, which means the model is
+  bounded by *noise*, not starved of information.
+* **MODEL** — 94.7% of the achievable ranking signal.
+
+This also explains a negative result. A round of feature engineering aimed
+squarely at the residual — adding a linear age term to match the world's
+exponential staleness decay, and interacting off-hours with messages — moved AUC
+by **+0.0002**. The second of those could not have helped: the guardrails block
+off-hours messages, so the feature barely varies in the data. The guardrails had
+already removed the variance the feature would have explained.
+
+The lesson is about reporting rather than modelling. A score without its ceiling
+is how a good model gets mistaken for a bad one, and how effort gets spent on a
+number that cannot move.
+
 ### Model quality
 
 AUC ~0.76 and ECE ~0.01 across seeds.

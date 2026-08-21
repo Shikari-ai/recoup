@@ -63,6 +63,13 @@ because it multiplies them by rupee amounts. A model that ranks perfectly but
 says 0.9 where the truth is 0.4 will chase receivables that were never coming
 back, and the error compounds across a batch. Measured ECE is **0.011**.
 
+On the discrimination side, AUC is **0.765 against a measured oracle ceiling of
+0.783** — 94.7% of the achievable ranking signal (`scripts/ceiling.py`). The
+ceiling is low because outcomes are Bernoulli draws, not because the model is
+weak, and this is the number that settles the "why not use something bigger"
+question: there is roughly one point of AUC available, and a gradient-boosted
+ensemble would spend the entire explainability budget to chase it.
+
 The second reason is explainability. Every coefficient is readable, and
 `contributions()` returns the *exact* signed decomposition of the logit — not
 an approximation like SHAP, because the logit genuinely is the sum of those
@@ -125,6 +132,25 @@ The model's job is to **grow the lookup table**, not to sit in the request path
 of every payment forever. After promotion the mapping is free, instant and
 permanent. That is the difference between using AI as a tool and using it as a
 dependency.
+
+**Measured, on the held-out slice:**
+
+```
+  lookup table alone     0.9688 accuracy, 0.0254 unmapped
+  table + LLM triage     0.9900 accuracy, 0.0042 unmapped   (+0.0212)
+  triage accepted        51/61 unmapped codes, 51 correct (100.0% precision)
+  dangerous errors       0
+```
+
+Triage lifts end-to-end classification from 96.9% to **99.0%**, and every
+suggestion it accepted was correct. It also *declined* 10 of the 61 — the
+confidence floor and the danger-term clamp doing exactly what they exist for.
+Those declines are not failures; they are the constraint stack refusing to be
+confident on ambiguous text, which is the behaviour that makes the accepted 51
+worth trusting.
+
+A guard test asserts precision stays above 95%. If it ever drops, one of the
+constraints has been loosened and the acceptances stop being safe.
 
 ### 2. Message composition — `recoup/llm/copy.py`
 

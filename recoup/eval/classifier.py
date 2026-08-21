@@ -59,6 +59,47 @@ class ClassMetrics:
         return 2 * p * r / (p + r) if (p + r) else 0.0
 
 
+@dataclass(frozen=True, slots=True)
+class PipelineReport:
+    """End-to-end classification: the lookup table plus LLM triage.
+
+    Reported separately from the table because they answer different questions.
+    The table's number says how complete the lookup coverage is. This one says
+    how accurately the *system* classifies, which is what the agent actually
+    acts on. Quoting only the first understates the system; quoting only the
+    second hides which component is carrying it.
+    """
+
+    n: int
+    table_accuracy: float
+    pipeline_accuracy: float
+    table_unmapped: float
+    pipeline_unmapped: float
+    triage_attempted: int
+    triage_accepted: int
+    triage_correct: int
+    dangerous: int
+
+    @property
+    def triage_precision(self) -> float:
+        return self.triage_correct / self.triage_accepted if self.triage_accepted else 0.0
+
+    def format(self) -> str:
+        lift = self.pipeline_accuracy - self.table_accuracy
+        lines = [
+            f"  lookup table alone     {self.table_accuracy:.4f} accuracy, "
+            f"{self.table_unmapped:.4f} unmapped",
+            f"  table + LLM triage     {self.pipeline_accuracy:.4f} accuracy, "
+            f"{self.pipeline_unmapped:.4f} unmapped   ({lift:+.4f})",
+            f"  triage accepted        {self.triage_accepted}/{self.triage_attempted} "
+            f"unmapped codes, {self.triage_correct} correct "
+            f"({self.triage_precision:.1%} precision)",
+            f"  dangerous errors       {self.dangerous}   "
+            f"(terminal failure read as actionable)",
+        ]
+        return "\n".join(lines)
+
+
 @dataclass
 class TaxonomyReport:
     n: int
@@ -131,6 +172,56 @@ class TaxonomyReport:
             for t, p, n in self.confusions[:6]:
                 rows.append(f"    {t:<24} -> {p:<24} {n:>5}")
         return "\n".join(rows)
+
+
+def evaluate_pipeline(events, truth, service) -> PipelineReport:
+    """Score the table, then the table with LLM triage behind it.
+
+    Triage only ever sees codes the table could not map, which is the whole
+    design: the model grows the table rather than replacing it. Measuring both
+    shows how much of the coverage each component is responsible for.
+    """
+    n = len(events)
+    table_ok = table_unmapped = 0
+    pipe_ok = pipe_unmapped = 0
+    attempted = accepted = correct = dangerous = 0
+
+    for e in events:
+        actual = truth[e.event_id]
+        base = classify(e.error_code, e.error_description, risk_kind=e.kind.value)
+        table_ok += base.failure_class is actual
+        table_unmapped += base.failure_class is FailureClass.UNKNOWN
+
+        cls = base
+        if base.failure_class is FailureClass.UNKNOWN:
+            attempted += 1
+            cls, sug = service.classify(
+                e.error_code, e.error_description, risk_kind=e.kind.value
+            )
+            if cls.failure_class is not FailureClass.UNKNOWN:
+                accepted += 1
+                correct += cls.failure_class is actual
+
+        pipe_ok += cls.failure_class is actual
+        pipe_unmapped += cls.failure_class is FailureClass.UNKNOWN
+        if (
+            actual in TERMINAL_CLASSES
+            and cls.failure_class not in TERMINAL_CLASSES
+            and cls.failure_class is not FailureClass.UNKNOWN
+        ):
+            dangerous += 1
+
+    return PipelineReport(
+        n=n,
+        table_accuracy=table_ok / n if n else 0.0,
+        pipeline_accuracy=pipe_ok / n if n else 0.0,
+        table_unmapped=table_unmapped / n if n else 0.0,
+        pipeline_unmapped=pipe_unmapped / n if n else 0.0,
+        triage_attempted=attempted,
+        triage_accepted=accepted,
+        triage_correct=correct,
+        dangerous=dangerous,
+    )
 
 
 def evaluate_taxonomy(

@@ -171,3 +171,79 @@ def test_report_formats_without_error():
     out = evaluate_taxonomy(events, truth).format()
     assert "TERMINAL RECALL" in out
     assert "errors by consequence" in out
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: the table plus LLM triage
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_scores_table_and_triage_separately():
+    """Both numbers are needed: one measures coverage, one measures the system."""
+    from recoup.eval.classifier import evaluate_pipeline
+    from recoup.llm.base import get_provider
+    from recoup.llm.triage import TriageService
+    from recoup.sim.generator import ScenarioConfig, generate
+
+    events, _, truth = generate(ScenarioConfig(n_events=2000, days=45, seed=42))
+    r = evaluate_pipeline(events, truth, TriageService(provider=get_provider("stub")))
+
+    assert r.n == len(events)
+    assert r.pipeline_accuracy >= r.table_accuracy, (
+        "triage made classification worse, which should be impossible: it only "
+        "ever sees codes the table could not map"
+    )
+    assert r.pipeline_unmapped <= r.table_unmapped
+    assert r.dangerous == 0, "a terminal failure was read as actionable end-to-end"
+
+
+def test_triage_only_sees_what_the_table_could_not_map():
+    """The design claim: the model grows the table, it does not replace it."""
+    from recoup.eval.classifier import evaluate_pipeline
+    from recoup.llm.base import get_provider
+    from recoup.llm.triage import TriageService
+    from recoup.sim.generator import ScenarioConfig, generate
+
+    events, _, truth = generate(ScenarioConfig(n_events=2000, days=45, seed=42))
+    svc = TriageService(provider=get_provider("stub"))
+    r = evaluate_pipeline(events, truth, svc)
+
+    unmapped_count = round(r.table_unmapped * r.n)
+    assert r.triage_attempted == unmapped_count, (
+        "triage was consulted on codes the table had already resolved"
+    )
+    assert r.triage_accepted <= r.triage_attempted
+
+
+def test_triage_acceptances_are_precise_on_this_feed():
+    """Guards the constraint stack: a wrong acceptance is an unauthorised debit.
+
+    The confidence floor, the closed enum and the danger-term clamp exist to make
+    accepted suggestions trustworthy. If precision ever drops here, one of those
+    has been loosened.
+    """
+    from recoup.eval.classifier import evaluate_pipeline
+    from recoup.llm.base import get_provider
+    from recoup.llm.triage import TriageService
+    from recoup.sim.generator import ScenarioConfig, generate
+
+    events, _, truth = generate(ScenarioConfig(n_events=3000, days=45, seed=42))
+    r = evaluate_pipeline(events, truth, TriageService(provider=get_provider("stub")))
+    assert r.triage_accepted > 0, "triage accepted nothing, so precision is untested"
+    assert r.triage_precision >= 0.95, (
+        f"triage precision fell to {r.triage_precision:.1%}; the constraints that "
+        "make acceptances safe may have been loosened"
+    )
+
+
+def test_pipeline_report_formats():
+    from recoup.eval.classifier import PipelineReport
+
+    r = PipelineReport(
+        n=100, table_accuracy=0.96, pipeline_accuracy=0.99,
+        table_unmapped=0.03, pipeline_unmapped=0.004,
+        triage_attempted=3, triage_accepted=3, triage_correct=3, dangerous=0,
+    )
+    out = r.format()
+    assert "lookup table alone" in out and "table + LLM triage" in out
+    assert r.triage_precision == 1.0

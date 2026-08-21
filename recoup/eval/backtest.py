@@ -52,7 +52,7 @@ from ..propensity import LogisticModel, ModelReport, evaluate
 from ..sim.generator import ScenarioConfig, generate
 from ..sim.world import World
 from ..store import RecoveryStore
-from .classifier import TaxonomyReport, evaluate_taxonomy
+from .classifier import PipelineReport, TaxonomyReport, evaluate_pipeline, evaluate_taxonomy
 from .runner import RunResult, run
 
 
@@ -69,6 +69,7 @@ class BacktestResult:
     taxonomy_accuracy: float = 0.0
     unknown_rate: float = 0.0
     taxonomy: TaxonomyReport | None = None
+    pipeline: PipelineReport | None = None
 
     @property
     def baseline(self) -> RunResult:
@@ -177,6 +178,13 @@ def backtest(
     tax = evaluate_taxonomy(test_events, truth)
     tax_acc, unk_rate = tax.accuracy, tax.unknown_rate
 
+    #    And end-to-end, with LLM triage behind the table. The table's number
+    #    measures lookup coverage; this measures what the agent actually acts on.
+    from ..llm.base import get_provider
+    from ..llm.triage import TriageService
+
+    pipe = evaluate_pipeline(test_events, truth, TriageService(provider=get_provider()))
+
     # -- 2. behaviour policy collects training data ------------------------
     say(f"[2/5] collecting training data (behaviour policy, explore={explore:g})...")
     store, health, guards = _fresh(pack)
@@ -260,4 +268,5 @@ def backtest(
         taxonomy_accuracy=tax_acc,
         unknown_rate=unk_rate,
         taxonomy=tax,
+        pipeline=pipe,
     )

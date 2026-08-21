@@ -85,6 +85,24 @@ CLAIMS: tuple[Claim, ...] = (
           r"lift vs rulebook\s+median \+([\d.]+)%", "+{}%",
           ("README.md", "docs/EVALUATION.md")),
 
+    # -- classification, end to end ---------------------------------------
+    Claim("pipeline accuracy", "backtest_seed42.txt",
+          r"table \+ LLM triage\s+(0\.\d{4}) accuracy", "{}",
+          ("README.md", "docs/EVALUATION.md")),
+    Claim("table accuracy", "backtest_seed42.txt",
+          r"lookup table alone\s+(0\.\d{4}) accuracy", "{}",
+          ("README.md", "docs/EVALUATION.md")),
+
+    # -- achievable ceiling -------------------------------------------------
+    #    Reporting a score without its ceiling is how a good model gets
+    #    mistaken for a bad one. Both are guarded.
+    Claim("oracle ceiling", "ceiling.txt",
+          r"oracle ceiling\s+median (0\.\d{4})", "{}",
+          ("README.md", "docs/EVALUATION.md")),
+    Claim("signal captured", "ceiling.txt",
+          r"signal captured\s+median ([\d.]+)%", "{}%",
+          ("README.md", "docs/EVALUATION.md")),
+
     # -- learning curve ----------------------------------------------------
     #    The crossover moved once already, from ~2,000 to ~300, when a noisy
     #    feature set was removed. It lived in five files as a bare number and

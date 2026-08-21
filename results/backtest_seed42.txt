@@ -116,6 +116,13 @@ n=2,400   accuracy=0.9688   macro-F1=0.9516   unmapped=0.0254
     token_expired            -> unknown                      7
     issuer_down              -> abandoned                    4
 
+  end-to-end, with LLM triage behind the table:
+
+  lookup table alone     0.9688 accuracy, 0.0254 unmapped
+  table + LLM triage     0.9900 accuracy, 0.0042 unmapped   (+0.0212)
+  triage accepted        51/61 unmapped codes, 51 correct (100.0% precision)
+  dangerous errors       0   (terminal failure read as actionable)
+
 -- PROPENSITY MODEL ----------------------------------------------------------
 
 n=5374  base_rate=0.170

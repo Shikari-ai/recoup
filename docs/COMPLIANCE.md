@@ -232,5 +232,5 @@ The test asserts:
 
 ```
 $ pytest tests/ -q
-223 passed
+227 passed
 ```

@@ -158,7 +158,15 @@ def taxonomy_section(r: BacktestResult) -> str:
     """
     if r.taxonomy is None:
         return f"taxonomy exact-match {r.taxonomy_accuracy:.3f}"
-    return r.taxonomy.format()
+    out = [r.taxonomy.format()]
+    if r.pipeline is not None:
+        out += [
+            "",
+            "  end-to-end, with LLM triage behind the table:",
+            "",
+            r.pipeline.format(),
+        ]
+    return "\n".join(out)
 
 
 def model_section(r: BacktestResult) -> str:

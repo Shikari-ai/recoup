@@ -59,8 +59,11 @@ Held-out backtest, 6,000 at-risk receivables over 45 days, seed 42:
 | `exhaustive_random` (same budget, no judgment) | Rs 1,11,62,162 | 5,409 | 0 |
 | **`recoup`** | **Rs 1,75,29,657** | 4,553 | **0** |
 
-**+31.1% over the strong rulebook · +285.1% over fixed retry · AUC 0.765 ·
-ECE 0.011 · zero guardrail violations.**
+**+31.1% over the strong rulebook · +285.1% over fixed retry · zero guardrail
+violations · classification 99.0% end-to-end with terminal recall 1.000.**
+
+On the model itself: **AUC 0.765 against a measured oracle ceiling of 0.783**,
+with ECE 0.011. That ceiling is the point — see below.
 
 ### Is that judgment, or just effort?
 
@@ -113,6 +116,42 @@ Lift is heavy-tailed — recovered value is dominated by a few large B2B
 receivables — so the spread is wide (min +3.2%, max +54.7%) even with every seed
 positive, and the full range is reported rather than the best one.
 
+### AUC 0.765 sounds mediocre. It is 95% of the achievable maximum.
+
+The obvious criticism of this model is that 0.765 is not a very impressive AUC,
+and the obvious response would be to go and improve it. I tried that first, and
+it was the wrong instinct.
+
+Recovery outcomes are **Bernoulli draws** at a latent probability. Even an
+oracle that knows that probability exactly ranks two receivables the wrong way
+round whenever their coin flips disagree with their probabilities. That is a
+hard ceiling no model of any size can pass. `scripts/ceiling.py` measures it:
+
+```
+  seed   rows   base   ORACLE  observable    MODEL     ECE  captured
+    42  2,169  0.212   0.7850      0.7827   0.7732  0.0183    95.9%
+    77  2,180  0.216   0.7696      0.7706   0.7467  0.0164    91.5%
+   112  2,165  0.210   0.7800      0.7752   0.7624  0.0227    93.7%
+   147  2,176  0.212   0.7857      0.7840   0.7731  0.0232    95.6%
+
+oracle ceiling      median 0.7825     model  median 0.7678
+signal captured     median 94.7% of the achievable ranking signal
+```
+
+Two things worth reading there. **The model is within about one point of the
+oracle**, so effort spent chasing AUC would mostly be spent chasing noise. And
+**observable-only sits essentially on top of the oracle**, meaning the latent
+per-customer traits the agent cannot see contribute almost nothing to
+rankability — the model is bounded by randomness, not starved of information.
+
+That is also why a round of feature engineering aimed at closing the gap
+produced **+0.0002 AUC**. One of those features was blocked by the guardrails
+before it could ever vary: off-hours messages barely exist in the data because
+quiet hours prevent them.
+
+Reporting a score without its ceiling is how a good model gets mistaken for a
+bad one, and how effort gets spent on a number that cannot move.
+
 ### The classifier is measured by consequence, not by accuracy
 
 Overall taxonomy accuracy is **96.9%** on held-out events (macro-F1 0.9516), and
@@ -134,6 +173,20 @@ by what it would actually cause:
 Accuracy counts those identically. **Terminal recall** is the number that
 matters, and every confusion the classifier does make lands in `unknown` —
 which fails closed to one attempt and no silent retry.
+
+And 96.9% understates the system, because the table is only half of it:
+
+```
+  lookup table alone     0.9688 accuracy, 0.0254 unmapped
+  table + LLM triage     0.9900 accuracy, 0.0042 unmapped   (+0.0212)
+  triage accepted        51/61 unmapped codes, 51 correct (100.0% precision)
+  dangerous errors       0
+```
+
+**End-to-end classification is 99.0%.** More useful than the headline: *every*
+remaining table error comes from a deliberately-novel code — the lookup table is
+100% correct on everything it was designed to cover, and triage handles the
+tail it was built for, at 100% precision on what it accepts.
 
 ### It also survives having its assumptions taken away
 
@@ -366,7 +419,7 @@ proposed enough violations to be worth testing, then verifies by **independent
 post-hoc replay** that not one got through.
 
 ```bash
-pytest tests/ -q          # 223 passed
+pytest tests/ -q          # 227 passed
 ```
 
 ---
@@ -509,7 +562,7 @@ docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
 scripts/                   stability · learning_curve · ablation · sensitivity
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   committed backtest, stability, sensitivity, curve output
-tests/                     223 tests, incl. adversarial + no-leakage
+tests/                     227 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -522,11 +575,12 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 223 tests
+pytest tests/ -q                         # 227 tests
 python scripts/stability.py --seeds 8    # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?
 python scripts/health_signal.py          # when does outage detection work?
+python scripts/ceiling.py                # how good could any model be?
 python scripts/verify_docs.py            # execute every command in these docs
 python scripts/verify_numbers.py         # every quoted figure vs results/
 ```

@@ -1,6 +1,6 @@
 # What broke, and how I got out
 
-Nine real failures from building this, in the order they happened.
+Ten real failures from building this, in the order they happened.
 
 The pattern that matters: **four of them invalidated results I had already
 written down, and every one of those four was silent.** Nothing raised, nothing
@@ -423,6 +423,60 @@ Two lessons, and the second is the one I will actually reuse:
 
 ---
 
+## 10. I tried to improve a number that could not move
+
+**Symptom.** None — this one started as a request to make the model more
+accurate. AUC 0.765 does not look impressive, and the obvious response is to go
+and improve it.
+
+**What I did first, which was wrong.** I diagnosed where accuracy was being
+lost, found that within-action-family AUC was much weaker than the overall
+figure (0.51–0.73 against 0.765), and concluded the feature set was
+underspecified. Comparing the features against the world's generative form
+turned up two genuine specification errors:
+
+* the world decays recovery as `staleness ** age_days`, which is **linear in
+  age** within log-odds, while the model only had `log1p(hours)` — a form that
+  cannot represent it;
+* the off-hours penalty applies to **messages only**, while the model had an
+  un-interacted `biz_hours`.
+
+Both looked like real bugs. Fixing both moved AUC by **+0.0002**.
+
+**Why.** Two separate reasons, and the second is the more interesting.
+
+The off-hours feature could never have helped: **the guardrails block off-hours
+messages**, so the feature barely varies in the data. The compliance layer had
+already removed the variance the feature would have explained. A model cannot
+learn from a case the system prevents.
+
+And the deeper reason is that there was almost nothing left to take. Outcomes
+are Bernoulli draws at a latent probability, so even an oracle that knows that
+probability exactly misranks two receivables whenever their coin flips disagree
+with their probabilities. `scripts/ceiling.py` measures it: **oracle AUC 0.783,
+model 0.768 — 94.7% of the achievable signal.** The model was already within
+about one point of the maximum any model could reach.
+
+The same script also shows that dividing out the latent per-customer traits
+barely moves the oracle, so the model is bounded by **noise**, not starved of
+information. There was no missing feature to find.
+
+**What I did instead.** Stopped optimising and started reporting properly. The
+ceiling is now a committed artefact, cited alongside the score, and guarded by
+`verify_numbers.py`. And the genuinely under-reported number turned out to be a
+different one: I had been quoting taxonomy accuracy for the **lookup table
+alone** (96.9%) when the system also runs LLM triage behind it. End-to-end it is
+**99.0%**, and every remaining table error traces to a deliberately-novel code —
+the table is 100% correct on everything it was built to cover.
+
+**Lesson.** *Measure the ceiling before optimising toward it.* "The score is
+low" and "the score is low relative to what is achievable" are different
+findings with opposite responses, and only the second one tells you whether
+effort will be repaid. Reporting a score without its ceiling is also how a good
+model gets mistaken for a bad one — which is what nearly happened here.
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`
@@ -465,6 +519,13 @@ would have shipped the answer either way.
 19/19 I did not celebrate; I concluded the grid was not looking where the agent
 is weak, and added four worlds designed to break it. A result you cannot
 falsify is not a strong result, it is an untested one.
+
+**Measure the ceiling before optimising toward it.** Entry 10. "The score is
+low" and "the score is low relative to what is achievable" are different
+findings with opposite responses. I spent a round of feature engineering on a
+number that had about one point of headroom, and only found that out by
+computing what an oracle could do on the same rows. That check is cheap and
+should come first.
 
 **Assume derived claims will outlive their cause.** The learning-curve crossover
 was a *consequence* of the feature set, but it lived in five files as a bare

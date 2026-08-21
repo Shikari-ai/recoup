@@ -1,0 +1,24 @@
+Achievable-ceiling analysis: 6,000 events x 4 seeds
+
+  seed   rows   base   ORACLE  observable    MODEL     ECE  captured
+--------------------------------------------------------------------
+    42  2,169  0.212   0.7850      0.7827   0.7732  0.0183    95.9%
+    77  2,180  0.216   0.7696      0.7706   0.7467  0.0164    91.5%
+   112  2,165  0.210   0.7800      0.7752   0.7624  0.0227    93.7%
+   147  2,176  0.212   0.7857      0.7840   0.7731  0.0232    95.6%
+--------------------------------------------------------------------
+
+oracle ceiling      median 0.7825   -- no model can pass this; outcomes are Bernoulli
+model               median 0.7678   ECE median 0.0205
+signal captured     median 94.7% of the achievable ranking signal
+
+The ceiling is low because the problem is genuinely noisy, not because
+the model is weak. Recovery is a coin flip weighted by context: two
+receivables with a 30% and a 40% chance will disagree with their
+probabilities often enough to cap AUC near 0.78 for ANY model.
+
+Note that OBSERVABLE-ONLY sits essentially on top of ORACLE. The latent
+per-customer traits contribute almost nothing to rankability, so the
+model is not starved of information -- it is bounded by noise. That is
+why adding features to close the gap did not work, and why the
+remaining gap is estimation error rather than a missing signal.
