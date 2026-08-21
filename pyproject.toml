@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "recoup"
+version = "0.1.0"
+description = "Autonomous revenue recovery agent for Razorpay merchants: detect revenue at risk, diagnose it, and run a bounded, compliant recovery workflow."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["payments", "razorpay", "revenue-recovery", "dunning", "upi", "agent"]
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Office/Business :: Financial",
+]
+
+# The core engine, the full backtest and the entire CLI run on the standard
+# library alone. That is deliberate: `git clone && python -m recoup backtest`
+# has to work on a clean machine, with no install step and nothing to go wrong.
+dependencies = []
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.27"]
+llm = ["anthropic>=0.40"]
+dev = ["pytest>=8.0", "pytest-cov>=4.1"]
+
+[project.scripts]
+recoup = "recoup.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["recoup*"]
+
+[tool.setuptools.package-data]
+recoup = ["api/static/*.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: spawns subprocesses or runs full backtests"]

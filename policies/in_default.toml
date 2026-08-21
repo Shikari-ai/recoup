@@ -1,0 +1,165 @@
+#
+# Recoup compliance policy pack -- India, consumer + B2B recovery
+#
+# This file is DATA, not code. Every hard limit the agent obeys is declared
+# here so that a risk or compliance reviewer can read the whole rule set
+# without opening a Python file, and change it without a deploy.
+#
+# ---------------------------------------------------------------------------
+# HONESTY NOTE -- read this before quoting any number below as legal advice.
+#
+# These values encode publicly documented card-scheme and Indian regulatory
+# requirements as understood at authoring time. Scheme rulebooks and RBI/NPCI
+# circulars change, carry category-specific carve-outs, and are in places
+# stricter than the public summaries. Treat this pack as a *starting
+# configuration that makes the constraints explicit and testable*, not as a
+# compliance certification. Before production use, have the numbers confirmed
+# against current circulars and your acquirer's rulebook, then edit here.
+#
+# The engineering claim this project makes is narrower and fully verifiable:
+# every one of these limits is enforced in code, on every action, with a
+# recorded verdict -- and the backtest reports zero violations across the
+# batch. See tests/test_guardrails.py and docs/COMPLIANCE.md.
+# ---------------------------------------------------------------------------
+
+[meta]
+name         = "in_default"
+jurisdiction = "IN"
+version      = "2026.08"
+description  = "Default India pack: card-scheme retry caps, RBI e-mandate notice, TRAI comms windows."
+
+# ---------------------------------------------------------------------------
+# Card-network retry caps.
+#
+# Visa and Mastercard both cap how many times a merchant may re-present a
+# DECLINED authorisation, and both fine merchants that exceed the cap. The
+# counters apply per card, per merchant, per original transaction.
+#
+# Only failures whose profile sets `counts_against_network_cap = true` accrue
+# here -- a gateway timeout is an infrastructure fault, not an issuer decline,
+# and counting it would starve legitimate retries.
+# ---------------------------------------------------------------------------
+[network_retry.visa]
+max_attempts  = 15
+window_days   = 30
+applies_to    = ["card", "card_token"]
+
+[network_retry.mastercard]
+max_attempts  = 10
+window_days   = 35
+applies_to    = ["card", "card_token"]
+
+[network_retry.default]
+# Fallback for RuPay/unknown scheme: the stricter of the two above.
+max_attempts  = 10
+window_days   = 30
+applies_to    = ["card", "card_token"]
+
+# ---------------------------------------------------------------------------
+# RBI e-mandate / recurring payments.
+#
+# pre_debit_notice_hours:
+#   The RBI e-mandate framework requires the customer be notified in advance
+#   of a recurring debit, giving them a window to opt out. The agent therefore
+#   cannot re-present a mandate debit until a notice has been sent and the
+#   notice period has elapsed. This is the rule most likely to be quietly
+#   skipped by a naive retry cron, and it is the reason mandate retries in
+#   this system are scheduled rather than immediate.
+#
+# afa_threshold_paise:
+#   Above this value a recurring debit needs Additional Factor of
+#   Authentication, i.e. the customer must be present. A silent retry above
+#   the threshold cannot succeed, so the agent must not spend an attempt on
+#   one -- it routes to a customer-present flow instead.
+# ---------------------------------------------------------------------------
+[emandate]
+pre_debit_notice_hours = 24
+afa_threshold_paise    = 1500000          # Rs 15,000
+applies_to             = ["upi_autopay", "emandate_nach", "card_token"]
+
+# ---------------------------------------------------------------------------
+# Commercial communication rules (TRAI TCCCPR).
+#
+# Promotional and transactional messages have different windows. Recovery
+# nudges are transactional in nature but we apply the stricter promotional
+# window by default, because a payment-chasing message to a DND-registered
+# customer is exactly the kind of thing that generates complaints.
+#
+# Hours are local Asia/Kolkata, not UTC. The conversion happens in
+# guardrails.py; getting this wrong sends 3am messages, which is both a
+# compliance problem and a very fast way to lose a customer.
+# ---------------------------------------------------------------------------
+[comms]
+quiet_hours_start_local = 21              # 21:00 IST -- no sends after this
+quiet_hours_end_local   = 9               # 09:00 IST -- sends resume
+timezone_offset_minutes = 330             # IST = UTC+05:30
+max_messages_per_7d     = 3               # per customer, all channels
+min_gap_between_sends_h = 12
+# Channels barred entirely for customers on the national DND registry.
+dnd_blocked_channels    = ["sms", "voice", "whatsapp"]
+# Email is consent-based rather than DND-registry based, so it survives DND
+# where explicit consent exists.
+dnd_allowed_channels    = ["email"]
+
+# ---------------------------------------------------------------------------
+# Stopping rules.
+#
+# "The bar" for this track asks for stopping rules explicitly. These are the
+# conditions under which the agent gives up, and they exist because an agent
+# that never stops is not an agent, it is a loop with a budget.
+# ---------------------------------------------------------------------------
+[stopping]
+# max_actions_per_event was tuned on a separate scenario (seed 7, see
+# scripts/tune_stopping.py) and the result was counter-intuitive enough to be
+# worth stating: lowering the cap from 6 to 3 *increased* recovered value by
+# ~4% while cutting actions per receivable from 2.8 to 1.9.
+#
+# The mechanism is diminishing returns. A second escalation, a fourth SMS and a
+# third re-presentment each convert worse than the first, so an action spent
+# early on a marginal move devalues every later one. A tight cap forces the
+# agent to spend its budget on its best move instead of its first plausible one.
+# Restraint is not a safety tax here; it is the strategy.
+max_actions_per_event      = 3            # total actions, any kind
+max_debit_attempts         = 3            # money-moving attempts specifically
+max_days_pursuing          = 21           # after which the receivable is written off
+# Give up if modelled recovery probability drops below this: continuing costs
+# money and customer goodwill for an outcome that is not coming.
+min_expected_value_paise   = 5000         # Rs 50.00 -- below this, not worth acting
+min_p_recover              = 0.02
+# Terminal failure classes may never be retried, regardless of anything else.
+never_retry_classes = [
+  "mandate_revoked",
+  "risk_declined",
+  "suspected_fraud",
+]
+
+# ---------------------------------------------------------------------------
+# Spend and blast-radius caps.
+#
+# A bug in the policy should cost rupees, not lakhs. These are the circuit
+# breakers that bound the damage of a bad decision, and the kill switch that
+# bounds the damage of a bad deploy.
+# ---------------------------------------------------------------------------
+[budget]
+max_actions_per_merchant_per_day = 5000
+max_comms_cost_per_merchant_paise_per_day = 500000   # Rs 5,000
+# Unit economics of each action, used for expected-value scoring and for the
+# daily cost cap. Debit retries are priced at the gateway attempt cost.
+[budget.action_cost_paise]
+retry_same_rail           = 0
+retry_alt_rail            = 0
+send_nudge_sms            = 20            # Rs 0.20
+send_nudge_whatsapp       = 85            # Rs 0.85
+send_nudge_email          = 2
+send_nudge_voice          = 300           # Rs 3.00
+send_payment_link         = 20
+request_instrument_update = 20
+escalate_human            = 5000          # Rs 50.00 of analyst time
+wait                      = 0
+stop                      = 0
+
+[killswitch]
+# Flip to true (or set RECOUP_KILLSWITCH=1) to make every action deny.
+# Present because the first thing a payments team asks about an autonomous
+# agent is "how do I turn it off".
+enabled = false

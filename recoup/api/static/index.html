@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Recoup — Revenue Recovery Agent</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --panel:#111827; --panel2:#161f33; --line:#1f2b45;
+    --ink:#e8eefc; --dim:#8fa3c8; --faint:#5d709a;
+    --accent:#3b82f6; --accent2:#60a5fa; --good:#34d399; --warn:#fbbf24; --bad:#f87171;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);
+       font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       padding:28px 22px 60px;max-width:1280px;margin:0 auto}
+  h1{font-size:21px;font-weight:650;letter-spacing:-.2px}
+  h2{font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.09em;
+     color:var(--faint);margin-bottom:12px}
+  header{display:flex;justify-content:space-between;align-items:flex-end;
+         border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:22px;
+         flex-wrap:wrap;gap:12px}
+  .sub{color:var(--dim);font-size:13px;margin-top:4px}
+  .tag{font:11px var(--mono);color:var(--accent2);background:rgba(59,130,246,.12);
+       border:1px solid rgba(59,130,246,.3);padding:3px 9px;border-radius:20px}
+  .grid{display:grid;gap:14px;margin-bottom:14px}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .g3{grid-template-columns:2fr 1fr 1fr}
+  .g2{grid-template-columns:1fr 1fr}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:17px 18px}
+  .kpi .v{font:600 27px/1.15 var(--mono);letter-spacing:-.5px}
+  .kpi .l{color:var(--faint);font-size:11px;text-transform:uppercase;
+          letter-spacing:.07em;margin-bottom:7px}
+  .kpi .n{color:var(--dim);font-size:12px;margin-top:5px}
+  .good{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+  .acc{color:var(--accent2)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--faint);font-weight:600;font-size:11px;
+     text-transform:uppercase;letter-spacing:.06em;padding:0 8px 8px 0;
+     border-bottom:1px solid var(--line)}
+  td{padding:9px 8px 9px 0;border-bottom:1px solid rgba(31,43,69,.5);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .num{font-family:var(--mono);text-align:right}
+  .bar{height:7px;background:var(--panel2);border-radius:4px;overflow:hidden;min-width:70px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .bar.me i{background:linear-gradient(90deg,#059669,var(--good))}
+  .feed{max-height:420px;overflow-y:auto;font-family:var(--mono);font-size:11.5px}
+  .feed .row{padding:9px 0;border-bottom:1px solid rgba(31,43,69,.5)}
+  .feed .row:last-child{border-bottom:none}
+  .feed .a{color:var(--accent2)} .feed .m{color:var(--good)}
+  .feed .why{color:var(--faint);font-size:10.5px;margin-top:3px;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .feed .blk{color:var(--warn);font-size:10.5px;margin-top:3px}
+  .pill{display:inline-block;font:10.5px var(--mono);padding:2px 7px;border-radius:5px;
+        background:var(--panel2);color:var(--dim);border:1px solid var(--line)}
+  .wt{display:flex;align-items:center;gap:9px;margin-bottom:6px;font:11.5px var(--mono)}
+  .wt .nm{width:180px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wt .track{flex:1;height:6px;background:var(--panel2);border-radius:3px;position:relative}
+  .wt .track i{position:absolute;height:100%;border-radius:3px}
+  .wt .track i.pos{background:var(--good);left:50%} .wt .track i.neg{background:var(--bad);right:50%}
+  .wt .vv{width:52px;text-align:right;color:var(--faint)}
+  .rel{display:flex;align-items:flex-end;gap:5px;height:110px;margin-top:6px}
+  .rel .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;
+            align-items:center;gap:2px;height:100%}
+  .rel .pair{display:flex;align-items:flex-end;gap:2px;width:100%;height:100%;justify-content:center}
+  .rel .p{width:9px;background:var(--accent);border-radius:2px 2px 0 0}
+  .rel .a{width:9px;background:var(--good);border-radius:2px 2px 0 0}
+  .rel .lb{font:9.5px var(--mono);color:var(--faint)}
+  .legend{display:flex;gap:14px;font:10.5px var(--mono);color:var(--faint);margin-top:9px}
+  .legend b{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px}
+  .note{color:var(--faint);font-size:11.5px;margin-top:12px;line-height:1.6}
+  code{font-family:var(--mono);font-size:11px;color:var(--dim);word-break:break-all}
+  footer{margin-top:26px;padding-top:16px;border-top:1px solid var(--line);
+         color:var(--faint);font-size:11.5px;line-height:1.7}
+  @media(max-width:980px){.g4{grid-template-columns:repeat(2,1fr)}
+    .g3,.g2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Recoup <span style="color:var(--faint);font-weight:400">/ AI Revenue Recovery</span></h1>
+    <div class="sub" id="scen">loading held-out backtest…</div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <span class="tag" id="pack">policy pack</span>
+    <span class="tag" id="seedtag">seed</span>
+  </div>
+</header>
+
+<div class="grid g4">
+  <div class="card kpi"><div class="l">Recovered (attributed)</div>
+    <div class="v good" id="k-rec">—</div><div class="n" id="k-rec-n"></div></div>
+  <div class="card kpi"><div class="l">Lift vs fixed retry</div>
+    <div class="v acc" id="k-l1">—</div><div class="n">what most merchants run today</div></div>
+  <div class="card kpi"><div class="l">Lift vs strong rulebook</div>
+    <div class="v acc" id="k-l2">—</div><div class="n">hand-written rules, incl. salary timing</div></div>
+  <div class="card kpi"><div class="l">Guardrail violations</div>
+    <div class="v" id="k-v">—</div><div class="n" id="k-v-n"></div></div>
+</div>
+
+<div class="grid g3">
+  <div class="card">
+    <h2>Recovery by policy — held-out slice</h2>
+    <table><thead><tr>
+      <th>Arm</th><th class="num">Attributed</th><th class="num">Net</th>
+      <th class="num">Actions</th><th style="width:110px"></th>
+    </tr></thead><tbody id="arms"></tbody></table>
+    <div class="note" id="armnote"></div>
+  </div>
+  <div class="card">
+    <h2>Model quality (held out)</h2>
+    <div style="display:flex;gap:18px;margin-bottom:6px">
+      <div><div class="l" style="color:var(--faint);font-size:10.5px">AUC</div>
+        <div style="font:600 20px var(--mono)" id="m-auc">—</div></div>
+      <div><div class="l" style="color:var(--faint);font-size:10.5px">ECE</div>
+        <div style="font:600 20px var(--mono)" class="good" id="m-ece">—</div></div>
+      <div><div class="l" style="color:var(--faint);font-size:10.5px">Brier</div>
+        <div style="font:600 20px var(--mono)" id="m-brier">—</div></div>
+    </div>
+    <div class="rel" id="rel"></div>
+    <div class="legend"><span><b style="background:var(--accent)"></b>predicted</span>
+      <span><b style="background:var(--good)"></b>actual</span></div>
+    <div class="note">Calibration matters more than ranking here: the policy
+      multiplies these probabilities by rupee amounts.</div>
+  </div>
+  <div class="card">
+    <h2>Audit ledger</h2>
+    <div class="kpi"><div class="l">Records</div>
+      <div class="v" style="font-size:22px" id="l-n">—</div></div>
+    <div style="margin-top:12px"><div class="l" style="color:var(--faint);font-size:10.5px">
+      Chain</div><div id="l-ok" style="font:600 15px var(--mono)">—</div></div>
+    <div style="margin-top:12px"><div class="l" style="color:var(--faint);font-size:10.5px">
+      Head</div><code id="l-head"></code></div>
+    <div class="note">Every record is chained into its predecessor's SHA-256.
+      Editing, deleting or reordering any entry breaks verification at that
+      exact sequence number.</div>
+  </div>
+</div>
+
+<div class="grid g2">
+  <div class="card">
+    <h2>Agent decisions — live feed from the ledger</h2>
+    <div class="feed" id="feed"></div>
+  </div>
+  <div class="card">
+    <h2>What the model learned</h2>
+    <div id="weights"></div>
+    <div class="note">Coefficients on the logit scale, largest magnitude first.
+      Every one is readable — which is why this is logistic regression and not
+      a gradient-boosted ensemble.</div>
+  </div>
+</div>
+
+<footer>
+  <strong>These numbers come from a simulation.</strong> The absolute rupee
+  figures are a property of that simulation. The claim being made is the
+  <em>comparison</em>: every arm ran over identical held-out events, identical
+  guardrails, identical action costs and identical random draws, and only the
+  decision logic differed. Organic recoveries — payers who would have returned
+  unaided — are credited equally to every arm and subtracted before lift is
+  computed. See <code>docs/EVALUATION.md</code> and <code>recoup/sim/world.py</code>.
+</footer>
+
+<script>
+const money = s => s || "—";
+async function load(){
+  const s = await (await fetch("/api/summary")).json();
+  const sc = s.scenario;
+  document.getElementById("scen").textContent =
+    `${sc.events.toLocaleString()} at-risk receivables over ${sc.days} days · `
+    + `${sc.train.toLocaleString()} train / ${sc.test.toLocaleString()} held-out test · `
+    + `${sc.at_risk} at risk`;
+  document.getElementById("pack").textContent = "pack: " + s.compliance.pack;
+  document.getElementById("seedtag").textContent = "seed: " + sc.seed;
+
+  const ag = s.arms.recoup;
+  document.getElementById("k-rec").textContent = ag.attributed;
+  document.getElementById("k-rec-n").textContent =
+    `${ag.events_recovered.toLocaleString()} receivables · net ${ag.net}`;
+  const pct = x => (x>=0?"+":"") + (x*100).toFixed(1) + "%";
+  document.getElementById("k-l1").textContent = pct(s.lift.vs_fixed_retry);
+  document.getElementById("k-l2").textContent = pct(s.lift.vs_rule_based);
+  const v = s.compliance.violations;
+  const el = document.getElementById("k-v");
+  el.textContent = v; el.className = "v " + (v===0?"good":"bad");
+  document.getElementById("k-v-n").textContent =
+    `${s.compliance.late_blocks} actions re-checked and refused at execution time`;
+
+  const order = ["no_action","fixed_retry","rule_based","recoup"];
+  const names = {no_action:"no action (control)",fixed_retry:"fixed retry 24h ×3",
+                 rule_based:"rule-based (strong)",recoup:"recoup"};
+  const max = Math.max(...order.map(k=>s.arms[k].attributed_paise));
+  document.getElementById("arms").innerHTML = order.map(k=>{
+    const a = s.arms[k], w = max>0 ? (a.attributed_paise/max*100) : 0;
+    const me = k==="recoup";
+    return `<tr>
+      <td>${me?"<strong>":""}${names[k]}${me?"</strong>":""}
+        <div class="pill" style="margin-top:3px">${a.note}</div></td>
+      <td class="num">${money(a.attributed)}</td>
+      <td class="num">${money(a.net)}</td>
+      <td class="num">${a.actions.toLocaleString()}</td>
+      <td><div class="bar ${me?"me":""}"><i style="width:${w}%"></i></div></td></tr>`;
+  }).join("");
+  document.getElementById("armnote").textContent =
+    `Taxonomy exact-match ${(s.model.taxonomy_accuracy*100).toFixed(1)}% on held-out `
+    + `events; ${(s.model.unknown_rate*100).toFixed(1)}% unmapped and routed to LLM triage.`;
+
+  document.getElementById("m-auc").textContent = s.model.auc.toFixed(3);
+  document.getElementById("m-ece").textContent = s.model.ece.toFixed(3);
+  document.getElementById("m-brier").textContent = s.model.brier.toFixed(3);
+  const mx = Math.max(...s.model.bins.map(b=>Math.max(b.predicted,b.actual)),0.01);
+  document.getElementById("rel").innerHTML = s.model.bins.map(b=>`
+    <div class="col"><div class="pair">
+      <div class="p" style="height:${b.predicted/mx*100}%"></div>
+      <div class="a" style="height:${b.actual/mx*100}%"></div>
+    </div><div class="lb">${b.predicted.toFixed(2)}</div></div>`).join("");
+
+  document.getElementById("l-n").textContent = s.compliance.ledger_records.toLocaleString();
+  const ok = s.compliance.ledger_intact;
+  const lo = document.getElementById("l-ok");
+  lo.textContent = ok ? "INTACT" : "BROKEN"; lo.className = ok?"good":"bad";
+  document.getElementById("l-head").textContent = s.compliance.ledger_head + "…";
+
+  const wmax = Math.max(...s.weights.map(w=>Math.abs(w.weight)),0.01);
+  document.getElementById("weights").innerHTML = s.weights.map(w=>{
+    const pos = w.weight>=0, pctw = Math.abs(w.weight)/wmax*50;
+    return `<div class="wt"><span class="nm">${w.feature}</span>
+      <span class="track"><i class="${pos?"pos":"neg"}" style="width:${pctw}%"></i></span>
+      <span class="vv">${w.weight>=0?"+":""}${w.weight.toFixed(2)}</span></div>`;
+  }).join("");
+
+  const ds = await (await fetch("/api/decisions?limit=60")).json();
+  document.getElementById("feed").innerHTML = ds.map(d=>{
+    const blocked = (d.blocked||[]).length ? `<div class="blk">⊘ ${d.blocked[0]}</div>` : "";
+    const alt = d.blocked_alternative ? `<div class="blk">⊘ ${d.blocked_alternative}</div>` : "";
+    return `<div class="row">
+      <span class="m">${d.event_id}</span>
+      <span class="pill">${d.failure_class}</span>
+      <span class="a">→ ${d.action}</span>
+      ${d.channel && d.channel!=="none" ? `<span class="pill">${d.channel}</span>`:""}
+      <span style="color:var(--faint)"> p=${(d.p_recover??0).toFixed(3)}</span>
+      <div class="why">${(d.reason||"").slice(0,170)}</div>${blocked}${alt}</div>`;
+  }).join("") || '<div class="why">no decisions recorded</div>';
+}
+load().catch(e=>{document.getElementById("scen").textContent = "error: "+e});
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.env
+.DS_Store
+.idea/
+.vscode/
+# Large generated artifacts (ledgers, fitted weights). The committed evidence
+# lives in results/ as plain text so it can be read and diffed in review.
+artifacts/
+*.jsonl
