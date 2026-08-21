@@ -213,8 +213,9 @@ measures how much history it needs first:
 | 200 | 256 | +2.3% | **−27.4%** | 3/4 |
 | 300 | 392 | +5.2% | +2.5% | **4/4** |
 | 500 | 654 | +17.9% | +8.3% | 4/4 |
-| 2,000 | 2,638 | +35.9% | +16.9% | 3/3 |
-| 8,000 | 10,364 | +25.6% | +18.3% | 3/3 |
+| 1,000 | 1,338 | +46.2% | +27.8% | 4/4 |
+| 2,000 | 2,651 | +28.2% | +16.9% | 4/4 |
+| 4,000 | 5,280 | +29.1% | +16.1% | 4/4 |
 
 **Read the min column, not the median.** Around 200 receivables the median is
 positive while one seed loses 27% — the model is not reliably better, it is

@@ -1,9 +1,16 @@
 # What broke, and how I got out
 
-Six real failures from building this, in the order they happened. Two of them
-invalidated results I had already written down, which is the interesting part:
-both were **silent**, both passed every test I had at the time, and both would
-have survived into the submission if I had not gone looking.
+Nine real failures from building this, in the order they happened.
+
+The pattern that matters: **four of them invalidated results I had already
+written down, and every one of those four was silent.** Nothing raised, nothing
+logged, every test passed. An audit trail that recorded nothing still printed
+"chain intact". A component that only worked because it was reading the
+simulator's ground truth looked exactly like a component that worked.
+
+That is the thing I would want a reviewer to take from this document. The bugs
+that cost me most were not the ones that broke something — they were the ones
+where the system kept producing plausible numbers that happened to be wrong.
 
 ---
 
@@ -434,13 +441,34 @@ Two lessons, and the second is the one I will actually reuse:
 
 ## What I would do differently
 
-**Write the falsifier before the feature.** The two expensive bugs (1 and 2)
-were both silent, and both would have been caught immediately by a test I only
-thought to write *after* being burned: "assert the ledger is non-empty", "assert
-two runs agree". I now write the test that would catch the absence, not just the
-test that confirms the presence.
+**Write the falsifier before the feature.** Entries 1 and 2 were both silent and
+both would have been caught instantly by a test I only thought to write *after*
+being burned: "assert the ledger is non-empty", "assert two runs agree". I now
+write the test that catches the *absence*, not just the one that confirms the
+presence.
 
-**Attribute before celebrating.** The +394% result was wrong in a way that took
-twenty minutes to find and would have been fatal in a panel interview. The
-question "which single component is producing most of this number, and can the
-baseline do it too?" is now something I ask of any result I like.
+**Ask what the component would look like if it did not work.** Entry 9 is the
+sharpest version of this. I built an issuer-health detector, watched it appear
+to work, and never once asked what evidence would distinguish "working" from
+"being handed the answer". Two minutes of arithmetic — failures per issuer per
+day against the detector's window — would have killed it before I wrote it.
+
+**Attribute before celebrating.** The +394% in entry 3 was wrong in a way that
+took twenty minutes to find and would have been fatal in a panel interview.
+"Which single component is producing most of this number, and can the baseline
+do it too?" is now something I ask of every result I like. It is why
+`scripts/ablation.py` exists, and that ablation is now the most convincing
+evidence in the project — it happens to say the model is doing the work, but I
+would have shipped the answer either way.
+
+**Treat winning everywhere as a warning.** When the sensitivity grid returned
+19/19 I did not celebrate; I concluded the grid was not looking where the agent
+is weak, and added four worlds designed to break it. A result you cannot
+falsify is not a strong result, it is an untested one.
+
+**Assume derived claims will outlive their cause.** The learning-curve crossover
+was a *consequence* of the feature set, but it lived in five files as a bare
+number. When the cause changed, nothing flagged it. That is why
+`scripts/verify_numbers.py` now re-derives every headline figure from committed
+artefacts and fails CI when a document has drifted — the one class of bug in
+this list I could actually automate away, so I did.

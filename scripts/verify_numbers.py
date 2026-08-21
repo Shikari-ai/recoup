@@ -85,6 +85,14 @@ CLAIMS: tuple[Claim, ...] = (
           r"lift vs rulebook\s+median \+([\d.]+)%", "+{}%",
           ("README.md", "docs/EVALUATION.md")),
 
+    # -- learning curve ----------------------------------------------------
+    #    The crossover moved once already, from ~2,000 to ~300, when a noisy
+    #    feature set was removed. It lived in five files as a bare number and
+    #    nothing flagged it. Now it is derived.
+    Claim("learning-curve crossover", "learning_curve.txt",
+          r"Reliable crossover: ~(\d+) at-risk receivables", "~{} receivables",
+          ("README.md", "docs/EVALUATION.md")),
+
     # -- ablation ----------------------------------------------------------
     Claim("model contribution", "ablation.txt",
           r"\+ fitted propensity model\s+\+([\d.]+)%", "+{}%",
