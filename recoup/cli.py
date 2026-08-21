@@ -390,9 +390,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--seed", type=int, default=42)
-    # Default above the ~2,000 crossover documented in
-    # scripts/learning_curve.py. Below it the learned policy genuinely loses to
-    # the rulebook, and the dashboard says so rather than hiding it.
+    # Comfortably above the ~300 crossover measured in
+    # scripts/learning_curve.py, so the dashboard demonstrates the model inside
+    # its reliable range. Run it lower and the dashboard says so rather than
+    # hiding it.
     s.add_argument("--events", type=int, default=4000)
     s.set_defaults(func=cmd_serve)
 

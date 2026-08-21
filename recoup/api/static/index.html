@@ -97,12 +97,13 @@
         This sample is below the model's reliable operating range.</div>
       <div style="color:var(--dim);font-size:12.5px;line-height:1.6">
         The propensity model has ~80 features and needs roughly
-        <b>2,000 at-risk receivables</b> (~2,500 training rows) before it
-        reliably beats a hand-written rulebook. Below that it is fitting noise,
-        and the honest recommendation is to ship the rulebook and collect data.
-        Measured in <code>scripts/learning_curve.py</code>; the lift figure
-        below may be negative, and that is the correct result rather than a bug.
-        Re-run with <code>--events 4000</code> to see the model inside its range.
+        <b>300 at-risk receivables</b> (~400 training rows) before it beats a
+        hand-written rulebook on every seed tested. Below about 200 the result
+        swings hard in both directions &mdash; one seed &minus;27%, another
+        +127% &mdash; so a rulebook is the safer choice and the honest
+        recommendation is to ship it and collect data. Measured in
+        <code>scripts/learning_curve.py</code>; a negative lift below is the
+        correct result rather than a bug.
       </div>
     </div>
   </div>

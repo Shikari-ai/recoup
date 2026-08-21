@@ -155,7 +155,7 @@ own output:
 > finding the regime where a rulebook is the better answer.*
 
 That remains the honest position, and the regime where a rulebook wins is real
-and documented — it is below ~2,000 receivables, measured in the learning curve
+and documented — it is below ~300 receivables, measured in the learning curve
 below. This grid varies the world, not the data volume, so it cannot find it.
 
 The row worth reading is `advantage_stripped` — a world built to falsify this
@@ -207,28 +207,27 @@ per-issuer volumes; the claim does not.
 The learned policy is not unconditionally better. `scripts/learning_curve.py`
 measures how much history it needs first:
 
-| receivables | training rows | median lift vs rulebook | wins |
-|---:|---:|---:|:---:|
-| 500 | 607 | **−14.6%** | 0/3 |
-| 1,000 | 1,206 | +9.5% | 2/3 |
-| 2,000 | 2,453 | +6.6% | **3/3** |
-| 4,000 | 4,895 | +31.1% | 3/3 |
-| 8,000 | 9,645 | +34.6% | 3/3 |
+| receivables | training rows | median lift vs rulebook | min | wins |
+|---:|---:|---:|---:|:---:|
+| 120 | 153 | +12.2% | **−1.7%** | 3/4 |
+| 200 | 256 | +2.3% | **−27.4%** | 3/4 |
+| 300 | 392 | +5.2% | +2.5% | **4/4** |
+| 500 | 654 | +17.9% | +8.3% | 4/4 |
+| 2,000 | 2,638 | +35.9% | +16.9% | 3/3 |
+| 8,000 | 10,364 | +25.6% | +18.3% | 3/3 |
 
-**Below ~2,000 at-risk receivables, ship the rulebook instead.** The model has
-~80 features; on a few hundred rows it fits noise, and the EV arithmetic then
-acts confidently on that noise. The dashboard enforces this rather than hiding
-it — run `recoup serve --events 1500` and it displays a warning that the sample
-is below the model's reliable range and reports the negative lift unsoftened.
+**Read the min column, not the median.** Around 200 receivables the median is
+positive while one seed loses 27% — the model is not reliably better, it is
+occasionally lucky. From ~300 (roughly 400 training rows) it wins on every seed
+tested. Below that, ship the rulebook and collect data; the dashboard says so
+itself when run under the threshold.
 
-> **These numbers come from a simulation, and I will not pretend otherwise.**
-> Recovery outcomes are counterfactual: without a merchant account you cannot
-> observe what *would* have happened. The absolute rupees are a property of my
-> simulator. The claim is the **comparison** — every arm ran over identical
-> events, guardrails, costs and random draws, and only the decision logic
-> differed. Payers who would have returned unaided (8.1%) are credited equally
-> to every arm and subtracted before lift is computed.
-> See **[docs/EVALUATION.md](docs/EVALUATION.md)**.
+That number moved during the build, and how it moved is the more useful part.
+It was ~2,000 until the issuer-health features came out. Those features were
+noise ([§9](docs/ENGINEERING_LOG.md)), and noise does the most damage exactly
+where there are fewest rows to average it away — so what looked like a
+data-hungry model was a feature-poisoned one. A model that needs implausibly
+much data to beat a rulebook is worth suspecting of that before buying more data.
 
 ### The baseline is deliberately hard to beat
 
@@ -538,9 +537,9 @@ python scripts/verify_docs.py            # execute every command in these docs
 - **Lift is heavy-tailed.** Dominated by a few large B2B receivables. 8 seeds
   and 19 worlds show the sign is reliable; neither gives a tight confidence
   interval.
-- **It needs data.** Below ~2,000 receivables it loses to a rulebook, and the
-  crossover was measured on this simulator, so a real merchant's threshold will
-  differ.
+- **It needs data.** Below ~300 receivables the result is unreliable (one seed
+  −27%), and the crossover was measured on this simulator, so a real merchant's
+  threshold will differ.
 - **I wrote both the world and the agent.** Mitigated by keeping world constants
   qualitative, quarantining them by import (enforced by test), and handing the
   baseline my best insight. A mitigation, not a solution.

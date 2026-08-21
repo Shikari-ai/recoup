@@ -114,13 +114,14 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
                 ],
             },
             # The learning curve (scripts/learning_curve.py) puts the reliable
-            # crossover at ~2,000 receivables. Below it the propensity model
-            # cannot fit its ~80 features and a rulebook is the better choice.
+            # crossover at ~300 receivables: at and above it the agent wins on
+            # every seed tested; below ~200 the result swings wildly (one seed
+            # -27%, another +127%) and a rulebook is the safer choice.
             # Surfacing that on the dashboard rather than quietly sizing the
             # demo above it is the difference between a product and a pitch.
             "envelope": {
-                "reliable_min_events": 2000,
-                "below_crossover": r.config.n_events < 2000,
+                "reliable_min_events": 300,
+                "below_crossover": r.config.n_events < 300,
             },
             "compliance": {
                 "pack": r.pack_name,

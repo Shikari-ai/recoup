@@ -42,7 +42,7 @@ costs and identical random draws, an EV-ranked policy recovered a median 30.5%
 more attributed value than a strong hand-written rulebook across 8 independent
 scenarios (positive in 8/8), and a median 38.3% more across 23 perturbed worlds
 (positive in 23/23) — while executing zero guardrail violations in every run,
-and only above a measured data threshold of ~2,000 receivables.*
+and only above a measured data threshold of ~300 receivables.*
 
 The second is a statement about **decision logic**, which is what transfers.
 The first is a statement about my random number generator.
@@ -165,23 +165,35 @@ and `scripts/learning_curve.py` measures how much:
 
 ```
   events  train rows      vs rulebook (median / min / max)    AUC   wins
-     500         607     -14.6%   -31.6%    -7.5%          0.743   0/3
-   1,000       1,206      +9.5%    -6.4%   +31.3%          0.750   2/3
-   2,000       2,453      +6.6%    +2.4%   +18.1%          0.764   3/3
-   4,000       4,895     +31.1%   +20.9%   +41.6%          0.767   3/3
-   8,000       9,645     +34.6%   +10.6%   +38.1%          0.771   3/3
+     120         153     +12.2%    -1.7%  +127.4%          0.759   3/4
+     200         256      +2.3%   -27.4%   +28.6%          0.733   3/4
+     300         392      +5.2%    +2.5%   +60.3%          0.768   4/4
+     500         654     +17.9%    +8.3%   +27.3%          0.729   4/4
+   2,000       2,638     +35.9%   +16.9%   +39.1%          0.759   3/3
+   8,000      10,364     +25.6%   +18.3%   +25.6%          0.762   3/3
 ```
 
-**Below roughly 2,000 at-risk receivables (~2,500 training rows), the rulebook
-is the better product.** The propensity model has ~80 features; with a few
-hundred rows it fits noise, and the EV arithmetic then acts confidently on that
-noise — which is worse than not learning at all.
+**Read the min column rather than the median.** At 200 receivables the median is
+positive while one seed in four loses 27%: the model is not reliably better
+there, it is occasionally lucky. From ~300 (roughly 400 training rows) it wins on
+every seed tested.
 
-The honest recommendation for a small merchant is therefore: ship the rulebook,
-collect history, switch when you cross the threshold. The dashboard enforces
-this rather than hiding it — run `recoup serve --events 1500` and it displays a
-warning that the sample is below the model's reliable range, and reports the
-negative lift without softening it.
+Below that, the honest recommendation for a small merchant is to ship the
+rulebook and collect history. The dashboard enforces this rather than hiding it —
+run `recoup serve --events 200` and it displays a warning that the sample is
+below the model's reliable range, and reports the lift without softening it.
+
+**How this number moved is more useful than the number.** It was ~2,000 for most
+of the build: below that the learned policy lost badly, and the obvious reading
+was that a model with ~80 features simply needs thousands of rows. That reading
+was wrong. The cause was the issuer-health features, which turned out to be pure
+noise (see below and `ENGINEERING_LOG.md` §9) — and noise does the most damage
+exactly where there are fewest rows to average it away. Removing them moved the
+crossover from ~2,000 to ~300.
+
+The generalisable lesson: a model that appears to need implausibly much data to
+beat a rulebook is often not data-starved but feature-poisoned, and the cheaper
+fix is to audit the features before buying more data.
 
 ### Robustness: does the result survive different assumptions?
 
@@ -215,7 +227,7 @@ noise (class, action and payer all uninformative), and messaging at 60× cost.
 It survives all four.
 
 The regime where a rulebook genuinely wins is real, and it is documented above:
-**below ~2,000 receivables**, where the model cannot fit its features. This grid
+**below ~300 receivables**, where the result becomes unreliable. This grid
 varies the world rather than the data volume, so by construction it cannot find
 that regime.
 
@@ -472,6 +484,6 @@ component produces this number" is the first question worth asking:
 - **The issuer health monitor is inert at this volume.** Correct algorithm, no
   signal to work with, and it is not carrying any of the reported lift. See
   above and `ENGINEERING_LOG.md` §9.
-- **It needs data.** Below ~2,000 receivables the learned policy loses to a
-  rulebook. The crossover was measured on this simulator, so a real merchant's
-  threshold will differ.
+- **It needs data.** Below ~300 receivables the result is unreliable — at 200,
+  one seed in four loses 27%. The crossover was measured on this simulator, so a
+  real merchant's threshold will differ.

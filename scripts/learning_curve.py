@@ -1,15 +1,20 @@
 """How much history does the agent need before it beats a rulebook?
 
-This exists because of an uncomfortable discovery. At 6,000 receivables the
-learned policy beats the strong rulebook by ~31%. At 700, it *loses to it in
-every perturbed world tested*. The propensity model has ~80 features; a few
-hundred training rows cannot fit them, so the policy acts on noise.
+A merchant deciding whether to deploy this needs an answer to "how much
+failed-payment history do I need first?", and the honest answer is a curve
+rather than a slogan.
 
-That is not a bug to hide, it is the operating envelope. A merchant deciding
-whether to deploy this needs to know the answer to "how much failed-payment
-history do I need first?", and the honest answer is a curve, not a slogan.
+The curve has moved once already, which is itself worth recording. An earlier
+version of this project put the crossover at ~2,000 receivables: below that the
+learned policy lost badly. The cause turned out not to be sample size at all but
+the issuer-health features, which were noise (docs/ENGINEERING_LOG.md 9) and did
+the most damage exactly where there were fewest rows to average them away. With
+those removed the crossover fell to ~300.
 
-    python scripts/learning_curve.py --seeds 3
+The lesson generalises: a model that needs implausibly much data to beat a
+rulebook is often not data-starved but feature-poisoned.
+
+    python scripts/learning_curve.py --seeds 4
 """
 
 from __future__ import annotations
@@ -25,7 +30,7 @@ from recoup.eval.backtest import backtest
 from recoup.policypack import load_pack
 from recoup.sim.generator import ScenarioConfig
 
-SIZES = [500, 1000, 2000, 4000, 8000]
+SIZES = [200, 300, 500, 1000, 2000, 4000]
 
 
 def main() -> int:
@@ -74,10 +79,19 @@ def main() -> int:
     else:
         print("No size in this grid produced a win on every seed.")
     print()
-    print("Below the crossover, a hand-written rulebook is the better choice, and")
-    print("the honest recommendation is to ship the rulebook and collect data.")
-    print("The model needs enough (action, outcome) pairs to fit ~80 features;")
-    print("under that it is fitting noise and the EV arithmetic acts on it.")
+    smallest = results[0][0]
+    if reliable and reliable[0][0] == smallest:
+        print("Note: the smallest size tested already wins on every seed, so the")
+        print("true crossover is at or below it. Re-run with a smaller --sizes grid")
+        print("to find it; quoting this number as 'the threshold' would overstate")
+        print("what was measured.")
+    else:
+        print("Below the crossover a hand-written rulebook is the safer choice, and")
+        print("the honest recommendation is to ship the rulebook and collect data.")
+    print()
+    print("Watch the spread, not just the median. Small samples here swing hard in")
+    print("both directions, and a merchant near the threshold should read the min")
+    print("column rather than the median.")
     return 0
 
 
