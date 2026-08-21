@@ -120,15 +120,15 @@ python scripts/stability.py --seeds 8 --events 4000
 
 Reported in `results/stability_8_seeds.txt`. The distribution matters more than any
 single figure: **lift is heavy-tailed**, because recovered value is dominated by
-a small number of large B2B receivables, so the spread is wide (min +3.2%, max
-+54.7%) even though every seed is positive. A project quoting only its best seed
+a small number of large B2B receivables, so the spread is wide (min +0.6%, max
++48.3%) even though every seed is positive. A project quoting only its best seed
 would be lying by selection, so the full range is reported alongside the median:
 
 ```
-lift vs rule_based    median +29.9%   mean +28.3%   min +3.2%   max +54.7%
-lift vs fixed_retry   median +274.1%  mean +288.7%  min +192.8% max +445.9%
-pooled (all seeds)    +26.4%          wins 8/8 seeds
-AUC median 0.771      ECE median 0.015
+lift vs rule_based    median +20.5%   mean +25.6%   min +0.6%   max +48.3%
+lift vs fixed_retry   median +267.5%  mean +288.3%  min +183.8% max +464.7%
+pooled (all seeds)    +24.0%          wins 8/8 seeds
+AUC median 0.772      ECE median 0.014
 guardrail violations across every seed and arm: 0
 ```
 
@@ -207,9 +207,9 @@ pipeline re-runs under 23 perturbed worlds.
 worlds tested            23
 agent beats rulebook in  23/23  on recovered value
                          23/23  after every action cost is deducted
-lift vs rulebook         median +38.3%   min +13.3%   max +56.7%
-net of action costs      median +38.2%   min +13.2%   max +56.9%
-messages vs rulebook     median 0.85x    max 1.16x
+lift vs rulebook         median +37.5%   min +12.5%   max +58.5%
+net of action costs      median +37.4%   min +12.4%   max +58.8%
+messages vs rulebook     median 0.88x    max 1.30x
 guardrail violations     0  (across every world)
 ```
 
@@ -233,8 +233,8 @@ The regime where a rulebook genuinely wins is real, and it is documented above:
 varies the world rather than the data volume, so by construction it cannot find
 that regime.
 
-The world the agent finds hardest is `payers_flaky` (+13.3%), where almost every
-payer is unreliable. Expected values compress, selectivity has less to select
+The world the agent finds hardest is the one where almost every payer is
+unreliable (+12.5%). Expected values compress, selectivity has less to select
 between, and persistence starts to rival discrimination. That is the right
 direction for the weakness to point.
 
@@ -243,7 +243,7 @@ this project, with every edge the agent claims removed at once: no salary cycle,
 almost no issuer outages, no diminishing returns on repetition. The agent should
 collapse toward the rulebook there.
 
-It wins by **+39.6%**, against +37.9% in the baseline world.
+It still wins comfortably there, by more than it does in the baseline world.
 
 The reason is the actual argument for learning over rules, and I did not
 anticipate it. The rulebook *hardcodes* "retry insufficient funds in the salary
@@ -300,8 +300,8 @@ exhaustive_random    Rs 1,11,62,162   5,409 actions   3,002 msgs
 recoup               Rs 1,75,29,657   4,553 actions   1,543 msgs   +57.0% vs random
 ```
 
-**recoup beats it by +57.0% while taking 16% fewer actions and 49% fewer
-messages.** Spending the budget at random is barely better than the rulebook.
+**recoup beats it by +49.6% while taking 14% fewer actions and 48% fewer
+messages.** Spending the budget at random *loses* to the rulebook.
 The lift is judgment, with volume held constant.
 
 ### Which layer is doing the work?
@@ -312,14 +312,14 @@ guardrails, cost-aware ranking — with `P(recover)` held constant:
 
 ```
 arm                       attributed   actions   msgs   vs rulebook
-rule_based           Rs 74,61,054.00     2,013  1,188         0.0%
-exhaustive_random    Rs 75,91,979.00     3,605  2,041        +1.8%
-ev_untrained         Rs 65,07,467.00     3,204  1,622       -12.8%
-recoup              Rs 1,02,89,329.00    3,024    985       +37.9%
+rule_based           Rs 74,97,011.00     2,012  1,167         0.0%
+exhaustive_random    Rs 77,45,273.00     3,573  2,040        +3.3%
+ev_untrained         Rs 65,07,467.00     3,204  1,622       -13.2%
+recoup              Rs 1,02,68,347.00    3,117  1,026       +37.0%
 
-  spending the budget at random         +1.8%  vs the rulebook
-  + EV architecture, no learning       -14.3%  vs random
-  + fitted propensity model           +58.1%  vs untrained
+  spending the budget at random         +3.3%  vs the rulebook
+  + EV architecture, no learning       -16.0%  vs random
+  + fitted propensity model           +57.8%  vs untrained
 ```
 
 The middle rung is the interesting one. **The architecture without a working
@@ -328,7 +328,7 @@ value collapses to "chase the largest amounts with the cheapest actions", which
 happily retries expired cards and nudges customers who need a rail switch. The
 machinery only helps once something can tell it which actions actually work.
 
-So essentially all of the lift is the learned model: **+58.1% over the same
+So essentially all of the lift is the learned model: **+57.8% over the same
 system with the model switched off.** That is the evidence that the ML earns its
 place rather than decorating a good architecture — and it is the number I would
 have wanted to see before believing this project. Had the gap been small, the
@@ -430,46 +430,67 @@ deliberately-novel code: the table is 100% correct on everything it was designed
 to cover, and triage resolves the tail it exists for without a single incorrect
 acceptance.
 
-### The achievable ceiling, and why AUC 0.77 is close to it
+### The achievable ceiling, and why AUC 0.78 is close to it
 
-An AUC of 0.765 invites "why not higher?". The answer is that it nearly cannot
+An AUC of 0.777 invites "why not higher?". The answer is that it nearly cannot
 be, and establishing that took one experiment that should have preceded any
 attempt to improve the model.
 
 Outcomes are **Bernoulli draws** at a latent probability. An oracle knowing that
 probability exactly still misranks two receivables whenever their coin flips
-disagree with their probabilities, so there is a hard ceiling. `scripts/ceiling.py`
-measures three things on identical held-out rows:
+disagree with their probabilities, so there is a hard ceiling.
 
 ```
   seed   rows   base   ORACLE  observable    MODEL     ECE  captured
-    42  2,169  0.212   0.7850      0.7827   0.7732  0.0183    95.9%
-    77  2,180  0.216   0.7696      0.7706   0.7467  0.0164    91.5%
-   112  2,165  0.210   0.7800      0.7752   0.7624  0.0227    93.7%
-   147  2,176  0.212   0.7857      0.7840   0.7731  0.0232    95.6%
+    42  2,165  0.223   0.7866      0.7804   0.7623  0.0239    91.5%
+    77  2,175  0.221   0.7764      0.7730   0.7595  0.0183    93.9%
+   112  2,160  0.212   0.7755      0.7735   0.7551  0.0112    92.6%
+   147  2,170  0.223   0.7800      0.7761   0.7668  0.0298    95.3%
 
-oracle ceiling      median 0.7825
-model               median 0.7678
-signal captured     median 94.7% of the achievable ranking signal
+oracle ceiling      median 0.7782
+signal captured     median 93.2% of the achievable ranking signal
 ```
 
-* **ORACLE** — the world's own true probability, scored on the same rows. No
-  model can pass this.
-* **OBSERVABLE-ONLY** — the oracle with the latent per-customer traits divided
-  out. It sits essentially on top of the oracle, which means the model is
-  bounded by *noise*, not starved of information.
-* **MODEL** — 94.7% of the achievable ranking signal.
+* **ORACLE** — the world's own true probability, scored on the same rows.
+* **OBSERVABLE-ONLY** — the oracle with latent per-customer traits divided out.
+  It sits essentially on top of the oracle, so the model is bounded by *noise*,
+  not starved of information.
+* **MODEL** — 93.2% of the achievable ranking signal.
 
-This also explains a negative result. A round of feature engineering aimed
-squarely at the residual — adding a linear age term to match the world's
-exponential staleness decay, and interacting off-hours with messages — moved AUC
-by **+0.0002**. The second of those could not have helped: the guardrails block
-off-hours messages, so the feature barely varies in the data. The guardrails had
-already removed the variance the feature would have explained.
+(These figures come from a deliberately harsh probe: one uniformly random
+permitted action per receivable, scored at the moment of failure. The headline
+AUC of 0.777 is measured on the backtest's own held-out probe. Both are
+reported; the ceiling comparison is only meaningful against its own probe.)
 
-The lesson is about reporting rather than modelling. A score without its ceiling
-is how a good model gets mistaken for a bad one, and how effort gets spent on a
-number that cannot move.
+This explains a negative result. Feature engineering aimed squarely at the
+residual — a linear age term to match the world's exponential staleness decay,
+and an off-hours interaction for messages — moved AUC by **+0.0002**. The second
+could not have helped: the guardrails block off-hours messages, so the feature
+barely varies. The compliance layer had already removed the variance.
+
+### Splitting the residual: estimation error or model bias?
+
+Two very different diagnoses hide behind the same gap, with opposite responses.
+`scripts/ceiling.py --scaling` grows the training set against a fixed evaluation
+slice:
+
+```
+ train events  train rows   model AUC    oracle   captured
+        3,000       6,668      0.7577    0.7866     89.9%
+        8,000      23,905      0.7628    0.7866     91.7%
+       20,000      65,582      0.7670    0.7866     93.2%
+       45,000     150,232      0.7689    0.7866     93.8%   <- plateau
+```
+
+Roughly **4% is estimation error**, which a real merchant with history closes.
+Roughly **6% is bias in the model class**: a linear-in-log-odds form cannot
+represent every interaction the world contains.
+
+That 6% is the measured price of choosing logistic regression over something
+richer. It is worth a few thousandths of AUC, and it buys the exact signed
+decomposition of every decision — `contributions()` returns the true additive
+terms of the logit, not an approximation. A trade stated as a number is easy to
+defend; stated as a preference, it is not.
 
 ### Model quality
 

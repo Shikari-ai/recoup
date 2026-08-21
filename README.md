@@ -55,15 +55,15 @@ Held-out backtest, 6,000 at-risk receivables over 45 days, seed 42:
 |---|---:|---:|---:|
 | `no_action` (control) | Rs 0 | 0 | 0 |
 | `fixed_retry` (24h × 3) | Rs 45,51,524 | 3,036 | 0 |
-| `rule_based` (**strong** rulebook) | Rs 1,33,66,199 | 2,961 | 0 |
-| `exhaustive_random` (same budget, no judgment) | Rs 1,11,62,162 | 5,409 | 0 |
-| **`recoup`** | **Rs 1,75,29,657** | 4,553 | **0** |
+| `rule_based` (**strong** rulebook) | Rs 1,34,22,647 | 2,963 | 0 |
+| `exhaustive_random` (same budget, no judgment) | Rs 1,17,66,029 | 5,313 | 0 |
+| **`recoup`** | **Rs 1,75,98,373** | 4,551 | **0** |
 
-**+31.1% over the strong rulebook · +285.1% over fixed retry · zero guardrail
+**+31.1% over the strong rulebook · +286.6% over fixed retry · zero guardrail
 violations · classification 99.0% end-to-end with terminal recall 1.000.**
 
-On the model itself: **AUC 0.765 against a measured oracle ceiling of 0.783**,
-with ECE 0.011. That ceiling is the point — see below.
+On the model itself: **AUC 0.777, ECE 0.012**, against a measured oracle ceiling
+of **0.778** — see below, because that ceiling is the whole point.
 
 ### Is that judgment, or just effort?
 
@@ -76,18 +76,18 @@ same candidate generation, same guardrails, same costs — but picks **uniformly
 at random** among permitted actions and ignores the expected-value floor. It is
 the "spend the whole budget, exercise no judgment" control.
 
-**recoup beats it by +57.0%, while taking 16% fewer actions and 49% fewer
-messages.** Spending the budget at random barely beats the rulebook at all.
+**recoup beats it by +49.6%, while taking 14% fewer actions and 48% fewer
+messages.** Spending the budget at random *loses* to the rulebook.
 The lift is judgment, with volume held constant.
 
 `scripts/ablation.py` takes the last step and switches the model off, keeping
 the whole architecture:
 
 ```
-rule_based           Rs 74,61,054     2,013 actions   1,188 msgs     0.0%
-exhaustive_random    Rs 75,91,979     3,605 actions   2,041 msgs    +1.8%
-ev_untrained         Rs 65,07,467     3,204 actions   1,622 msgs   -12.8%
-recoup               Rs 1,02,89,329   3,024 actions     985 msgs   +37.9%
+rule_based           Rs 74,97,011     2,012 actions   1,167 msgs     0.0%
+exhaustive_random    Rs 77,45,273     3,573 actions   2,040 msgs    +3.3%
+ev_untrained         Rs 65,07,467     3,204 actions   1,622 msgs   -13.2%
+recoup               Rs 1,02,68,347   3,117 actions   1,026 msgs   +37.0%
 ```
 
 Read the third row carefully. **The architecture without a working model is
@@ -95,7 +95,7 @@ worse than acting at random.** With `P(recover)` held constant, expected value
 collapses to "chase the biggest amounts with the cheapest actions", which
 cheerfully retries expired cards and nudges people who need a rail switch.
 
-Which means essentially all of the lift — **+58.1% over the same system with
+Which means essentially all of the lift — **+57.8% over the same system with
 the model switched off** — is the learned model. That is the evidence that the
 ML earns its place rather than decorating a good architecture. Had this gap
 been small, the honest thing would have been to delete the model and ship the
@@ -105,22 +105,22 @@ One seed is an anecdote, so `scripts/stability.py` re-runs the entire pipeline
 across 8 independent scenarios of 4,000 receivables each:
 
 ```
-lift vs rule_based    median +29.9%   mean +28.3%   min +3.2%   max +54.7%
-lift vs fixed_retry   median +274.1%  mean +288.7%  min +192.8% max +445.9%
-pooled (all seeds)    +26.4%          wins 8/8 seeds
-AUC median 0.771      ECE median 0.015
+lift vs rule_based    median +20.5%   mean +25.6%   min +0.6%   max +48.3%
+lift vs fixed_retry   median +267.5%  mean +288.3%  min +183.8% max +464.7%
+pooled (all seeds)    +24.0%          wins 8/8 seeds
+AUC median 0.772      ECE median 0.014
 guardrail violations across every seed and arm: 0
 ```
 
 Lift is heavy-tailed — recovered value is dominated by a few large B2B
-receivables — so the spread is wide (min +3.2%, max +54.7%) even with every seed
+receivables — so the spread is wide (min +0.6%, max +48.3%) even with every seed
 positive, and the full range is reported rather than the best one.
 
-### AUC 0.765 sounds mediocre. It is 95% of the achievable maximum.
+### AUC 0.777 sounds mediocre. It is 93% of the achievable maximum.
 
-The obvious criticism of this model is that 0.765 is not a very impressive AUC,
-and the obvious response would be to go and improve it. I tried that first, and
-it was the wrong instinct.
+The obvious criticism of this model is that 0.777 is not an impressive AUC, and
+the obvious response is to go and improve it. I tried that first, and it was the
+wrong instinct.
 
 Recovery outcomes are **Bernoulli draws** at a latent probability. Even an
 oracle that knows that probability exactly ranks two receivables the wrong way
@@ -129,28 +129,46 @@ hard ceiling no model of any size can pass. `scripts/ceiling.py` measures it:
 
 ```
   seed   rows   base   ORACLE  observable    MODEL     ECE  captured
-    42  2,169  0.212   0.7850      0.7827   0.7732  0.0183    95.9%
-    77  2,180  0.216   0.7696      0.7706   0.7467  0.0164    91.5%
-   112  2,165  0.210   0.7800      0.7752   0.7624  0.0227    93.7%
-   147  2,176  0.212   0.7857      0.7840   0.7731  0.0232    95.6%
+    42  2,165  0.223   0.7866      0.7804   0.7623  0.0239    91.5%
+    77  2,175  0.221   0.7764      0.7730   0.7595  0.0183    93.9%
+   112  2,160  0.212   0.7755      0.7735   0.7551  0.0112    92.6%
+   147  2,170  0.223   0.7800      0.7761   0.7668  0.0298    95.3%
 
-oracle ceiling      median 0.7825     model  median 0.7678
-signal captured     median 94.7% of the achievable ranking signal
+oracle ceiling      median 0.7782
+signal captured     median 93.2% of the achievable ranking signal
 ```
 
-Two things worth reading there. **The model is within about one point of the
-oracle**, so effort spent chasing AUC would mostly be spent chasing noise. And
-**observable-only sits essentially on top of the oracle**, meaning the latent
+**Observable-only sits essentially on top of the oracle**, so the latent
 per-customer traits the agent cannot see contribute almost nothing to
-rankability — the model is bounded by randomness, not starved of information.
+rankability. The model is bounded by randomness, not starved of information.
 
-That is also why a round of feature engineering aimed at closing the gap
-produced **+0.0002 AUC**. One of those features was blocked by the guardrails
-before it could ever vary: off-hours messages barely exist in the data because
-quiet hours prevent them.
+That is why a round of feature engineering aimed at the residual produced
+**+0.0002 AUC**. One of those features was blocked before it could ever vary:
+off-hours messages barely exist in the data because the guardrails prevent them.
+The compliance layer had already removed the variance the feature would explain.
 
-Reporting a score without its ceiling is how a good model gets mistaken for a
-bad one, and how effort gets spent on a number that cannot move.
+### So what *is* the remaining 7%?
+
+`scripts/ceiling.py --scaling` splits it, by growing the training set against a
+fixed evaluation slice:
+
+```
+ train events  train rows   model AUC    oracle   captured
+        3,000       6,668      0.7577    0.7866     89.9%
+        8,000      23,905      0.7628    0.7866     91.7%
+       20,000      65,582      0.7670    0.7866     93.2%
+       45,000     150,232      0.7689    0.7866     93.8%   <- plateau
+```
+
+Roughly **4% is estimation error** that more merchant history closes, and
+roughly **6% is bias in the model class** — a linear-in-log-odds form cannot
+represent every interaction the world contains.
+
+That 6% is the price of choosing logistic regression, and now it is a number
+rather than a preference: a gradient-boosted ensemble could recover about six
+percent of the achievable ranking signal, worth a few thousandths of AUC, and
+would cost the exact signed decomposition of every decision that makes this
+agent auditable. Stated that way the trade is easy to defend.
 
 ### The classifier is measured by consequence, not by accuracy
 
@@ -191,9 +209,9 @@ tail it was built for, at 100% precision on what it accepts.
 ### It also survives having its assumptions taken away
 
 One simulator is one simulator, so `python -m recoup sensitivity` re-runs the
-entire pipeline across **23 perturbed worlds**: median **+38.3%**, positive in
+entire pipeline across **23 perturbed worlds**: median **+37.5%**, positive in
 **23/23** both on recovered value and after every action cost is deducted, zero
-violations throughout — while sending a median **0.85×** the rulebook's messages.
+violations throughout — while sending a median **0.88×** the rulebook's messages.
 
 Four of those worlds exist specifically to break it. A first grid came back
 19/19 and I treated that as a warning rather than a result: winning everywhere
@@ -214,8 +232,8 @@ below. This grid varies the world, not the data volume, so it cannot find it.
 The row worth reading is `advantage_stripped` — a world built to falsify this
 project, with *every* edge the agent claims removed at once: no salary cycle,
 almost no issuer outages, no diminishing returns on repetition. The agent should
-collapse toward the rulebook there. It wins by **+39.6%**, against +37.9% in the
-baseline world.
+collapse toward the rulebook there. It still wins comfortably, and by more than
+it does in the baseline world.
 
 The reason is the actual case for learning over rules, and I didn't anticipate
 it. The rulebook **hardcodes** "retry insufficient funds in the salary window."
@@ -380,7 +398,7 @@ verification at that exact sequence number.
 
 ```bash
 python -m recoup backtest --ledger artifacts/audit.jsonl
-python -m recoup verify   artifacts/audit.jsonl   # OK  12916 records, chain intact
+python -m recoup verify   artifacts/audit.jsonl   # OK  13941 records, chain intact
 python -m recoup audit    artifacts/audit.jsonl evt_001081
 ```
 

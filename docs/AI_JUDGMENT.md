@@ -117,6 +117,17 @@ debit the customer explicitly cancelled.
   engine that stops recovering revenue because an inference API is having a bad
   afternoon has its dependencies backwards.
 
+**Where it sits in the system.** `recoup/policy.py` builds a `Classifier` —
+lookup table first, triage only when the table returns UNKNOWN — and passes it
+to **every** policy arm, including the baselines. Classification is an *input*
+to a decision, not decision logic, so giving one arm a clearer view of the same
+event would make the backtest measure the input rather than the policy.
+
+(It was not always wired. Triage existed, was documented and was measured for
+several days while the policy still called the bare lookup table, so the agent
+never used it. See `ENGINEERING_LOG.md` §11 — a component and its consumer can
+both be correct and completely unconnected, with every unit test green.)
+
 **The part I would defend hardest: it is not in the hot path.** Results are
 cached by normalised code, so each novel string costs one call ever, and
 `promote_candidates()` exports what was learned as ready-to-paste table entries

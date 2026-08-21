@@ -1,6 +1,6 @@
 # What broke, and how I got out
 
-Ten real failures from building this, in the order they happened.
+Eleven real failures from building this, in the order they happened.
 
 The pattern that matters: **four of them invalidated results I had already
 written down, and every one of those four was silent.** Nothing raised, nothing
@@ -477,6 +477,58 @@ model gets mistaken for a bad one — which is what nearly happened here.
 
 ---
 
+## 11. The LLM triage was documented, measured, and never actually used
+
+**Symptom.** None. It was found by grepping for my own component while checking
+something else.
+
+```
+$ grep -rn "TriageService" recoup/ --include=*.py | grep -v llm/triage.py
+recoup/cli.py:174:    svc = TriageService(...)
+recoup/eval/backtest.py:186:  pipe = evaluate_pipeline(..., TriageService(...))
+```
+
+The CLI used it. The evaluation measured it. **The policy did not call it.**
+`RecoveryPolicy.decide()` invoked the bare `classify()`, so every novel error
+code was handled with the conservative UNKNOWN profile — one attempt, no silent
+retry — and the model saw `fc_unknown` rather than a resolved class.
+
+I had written a document arguing carefully about where a language model earns
+its place in this system, measured its contribution, quoted the numbers in the
+README, and shipped an agent that never consulted it.
+
+**Why nothing caught it.** Every test passed because every test was scoped to a
+component. `test_llm.py` proved triage classifies correctly. `evaluate_pipeline`
+proved it lifts accuracy. Neither asked the only question that mattered: *does
+the thing that makes decisions use it?* There was no test spanning the seam, so
+the seam was empty.
+
+**Fix.** A `Classifier` — table first, triage for the unmapped tail, results
+cached by code — passed to **every** policy arm. Shared deliberately:
+classification is an *input* to a decision, not decision logic, so letting one
+arm see the event more clearly would make the backtest measure the input rather
+than the policy. That is the same error that produced a phantom +394% in entry 3,
+and I was one line away from repeating it in the other direction.
+
+Effect, with every arm classifying identically:
+
+- held-out **AUC 0.7652 → 0.7766**, because the model now sees a resolved class
+  instead of `fc_unknown` on ~2.5% of events
+- recoup +Rs 68,716; the rulebook +Rs 56,448 — both gain, so lift holds at +31.1%
+- end-to-end classification **96.9% → 99.0%**
+
+The regression test now asserts the *behaviour* across the seam: given a novel
+code, the bare policy classifies `unknown` and the wired policy classifies
+`issuer_down`, with `llm:` provenance in the rationale.
+
+**Lesson.** *Integration is not implied by having both pieces.* I had a correct
+component and a correct consumer and no wire between them, and every unit test
+was green because each half worked. The test that would have caught this asserts
+an end-to-end behaviour change, not a component output — and it is the kind of
+test I write least often, because both halves already look done.
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`
@@ -526,6 +578,11 @@ findings with opposite responses. I spent a round of feature engineering on a
 number that had about one point of headroom, and only found that out by
 computing what an oracle could do on the same rows. That check is cheap and
 should come first.
+
+**Test the seam, not just the halves.** Entry 11. A component and its consumer
+can both be correct and completely unconnected, and every unit test will still
+pass. The tests I write least often are the ones that assert a behaviour change
+end to end, and that is exactly the gap an unwired component hides in.
 
 **Assume derived claims will outlive their cause.** The learning-curve crossover
 was a *consequence* of the feature set, but it lived in five files as a bare

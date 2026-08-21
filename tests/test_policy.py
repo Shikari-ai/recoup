@@ -409,3 +409,94 @@ def test_exhaustive_random_is_deterministic(pack):
         return d.action.kind, d.action.execute_at, d.action.rail
 
     assert decide_once() == decide_once()
+
+
+# ---------------------------------------------------------------------------
+# The shared classifier: table first, triage for the tail
+# ---------------------------------------------------------------------------
+
+
+def test_classifier_uses_the_table_and_does_not_consult_triage(pack):
+    """The table covers ~97% of traffic. Triage must not be in that path."""
+    from recoup.llm.base import get_provider
+    from recoup.llm.triage import TriageService
+    from recoup.policy import Classifier
+
+    svc = TriageService(provider=get_provider("stub"))
+    c = Classifier(svc)
+    cls = c(event(error_code="card_expired"))
+    assert cls.failure_class.value == "card_expired"
+    assert c.consulted == 0, "triage was consulted for a code the table knows"
+    assert svc.calls == 0
+
+
+def test_classifier_consults_triage_only_on_unmapped_codes(pack):
+    from recoup.llm.base import get_provider
+    from recoup.llm.triage import TriageService
+    from recoup.policy import Classifier
+
+    c = Classifier(TriageService(provider=get_provider("stub")))
+    cls = c(event(error_code="NPCI_XC_09",
+                  error_description="Beneficiary PSP unreachable, retry advised"))
+    assert c.consulted == 1
+    assert c.resolved == 1
+    assert cls.failure_class.value == "issuer_down"
+    assert cls.provenance.startswith("llm:")
+
+
+def test_classifier_without_triage_is_exactly_the_table(pack):
+    """Default must be the bare table, so tests and offline runs are unchanged."""
+    from recoup.policy import Classifier
+    from recoup.taxonomy import classify
+
+    c = Classifier()
+    ev = event(error_code="TOTALLY_NEW_9999", error_description="nothing recognisable")
+    assert c(ev).failure_class is classify(ev.error_code, ev.error_description).failure_class
+    assert c.consulted == 0
+
+
+def test_triage_resolution_reaches_the_decision(pack):
+    """The integration that was missing: triage must change what the agent does.
+
+    Regression test. TriageService existed, was documented and was measured, but
+    RecoveryPolicy called the bare classify() -- so the agent never used it and
+    treated every novel code with the conservative UNKNOWN profile.
+    """
+    from recoup.policy import default_classifier
+
+    ev = event(error_code="NPCI_XC_09",
+               error_description="Beneficiary PSP unreachable, retry advised")
+
+    bare, store_a, _ = make_policy(pack)
+    store_a.mark_seen(ev.event_id, ev.occurred_at)
+    d_bare = bare.decide(ev, T0)
+
+    store_b = RecoveryStore()
+    withtriage = RecoveryPolicy(
+        pack, LogisticModel(), IssuerHealthMonitor(), store_b,
+        GuardrailEngine(pack, store_b), seed=1, classifier=default_classifier(),
+    )
+    store_b.mark_seen(ev.event_id, ev.occurred_at)
+    d_triage = withtriage.decide(ev, T0)
+
+    assert d_bare.failure_class.value == "unknown"
+    assert d_triage.failure_class.value == "issuer_down"
+    assert d_triage.recoverability.value == "retry_only"
+    assert "llm:" in d_triage.rationale
+
+
+def test_every_arm_shares_one_classifier(pack):
+    """Classification is an input, not decision logic.
+
+    If one arm classified better than another, the backtest would be measuring
+    the input rather than the policy -- the same error that produced a phantom
+    +394% earlier in this project.
+    """
+    import inspect
+
+    from recoup.eval import backtest as bt
+
+    src = inspect.getsource(bt.backtest)
+    assert "classifier=classifier" in src or "classifier)" in src
+    for arm in ("NoActionPolicy", "FixedRetryPolicy", "RuleBasedPolicy"):
+        assert f"{arm}(p, s, g, classifier)" in src, f"{arm} does not share the classifier"

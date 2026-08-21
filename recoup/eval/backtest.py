@@ -45,6 +45,7 @@ from ..policy import (
     NoActionPolicy,
     RecoveryPolicy,
     RuleBasedPolicy,
+    default_classifier,
     exhaustive_random,
 )
 from ..policypack import PolicyPack, load_pack
@@ -154,6 +155,7 @@ def backtest(
     train_frac: float = 0.6,
     explore: float = 0.85,
     ledger_path: str | None = None,
+    triage: bool = True,
     verbose: bool = True,
 ) -> BacktestResult:
     config = config or ScenarioConfig()
@@ -162,6 +164,12 @@ def backtest(
     def say(msg: str) -> None:
         if verbose:
             print(msg, flush=True)
+
+    # One classifier for the whole backtest: table first, LLM triage for the
+    # unmapped tail. Shared by every arm because classification is an input to a
+    # decision, not part of the decision logic -- giving one arm a better view
+    # of the same event would measure the input rather than the policy.
+    classifier = default_classifier(enable_triage=triage)
 
     say(f"[1/5] generating {config.n_events:,} at-risk events over {config.days} days...")
     events, world, truth = generate(config)
@@ -184,13 +192,15 @@ def backtest(
     from ..llm.triage import TriageService
 
     pipe = evaluate_pipeline(test_events, truth, TriageService(provider=get_provider()))
+    say(f"      table {pipe.table_accuracy:.4f} -> with triage {pipe.pipeline_accuracy:.4f}")
 
     # -- 2. behaviour policy collects training data ------------------------
     say(f"[2/5] collecting training data (behaviour policy, explore={explore:g})...")
     store, health, guards = _fresh(pack)
     _warm_health(health, train_events, world, train_events[-1].occurred_at)
     behaviour = RecoveryPolicy(
-        pack, LogisticModel(), health, store, guards, explore=explore, seed=config.seed
+        pack, LogisticModel(), health, store, guards, explore=explore,
+        seed=config.seed, classifier=classifier,
     )
     train_run = run(
         behaviour, train_events, world, truth, pack,
@@ -213,7 +223,8 @@ def backtest(
     pstore, phealth, pguards = _fresh(pack)
     _warm_health(phealth, test_events, world, test_events[-1].occurred_at)
     probe = RecoveryPolicy(
-        pack, LogisticModel(), phealth, pstore, pguards, explore=1.0, seed=config.seed + 1
+        pack, LogisticModel(), phealth, pstore, pguards, explore=1.0,
+        seed=config.seed + 1, classifier=classifier,
     )
     probe_run = run(
         probe, test_events, world, truth, pack,
@@ -229,14 +240,17 @@ def backtest(
     arms: dict[str, RunResult] = {}
 
     for name, make in (
-        ("no_action", lambda p, s, g, h: NoActionPolicy(p, s, g)),
-        ("fixed_retry", lambda p, s, g, h: FixedRetryPolicy(p, s, g)),
-        ("rule_based", lambda p, s, g, h: RuleBasedPolicy(p, s, g)),
+        ("no_action", lambda p, s, g, h: NoActionPolicy(p, s, g, classifier)),
+        ("fixed_retry", lambda p, s, g, h: FixedRetryPolicy(p, s, g, classifier)),
+        ("rule_based", lambda p, s, g, h: RuleBasedPolicy(p, s, g, classifier)),
         # Spends the whole action budget at random. The gap between this arm and
         # `recoup` is judgement with volume held constant.
         ("exhaustive_random",
-         lambda p, s, g, h: exhaustive_random(p, s, g, h, seed=config.seed)),
-        ("recoup", lambda p, s, g, h: RecoveryPolicy(p, model, h, s, g, seed=config.seed)),
+         lambda p, s, g, h: exhaustive_random(p, s, g, h, seed=config.seed,
+                                              classifier=classifier)),
+        ("recoup", lambda p, s, g, h: RecoveryPolicy(p, model, h, s, g,
+                                                     seed=config.seed,
+                                                     classifier=classifier)),
     ):
         s, h, g = _fresh(pack)
         _warm_health(h, test_events, world, test_events[0].occurred_at)

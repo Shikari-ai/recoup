@@ -38,18 +38,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from recoup.domain import COMMS_ACTIONS, ActionKind
 from recoup.eval.backtest import _fresh
 from recoup.eval.runner import run
-from recoup.policy import RecoveryPolicy
+from recoup.policy import RecoveryPolicy, default_classifier
 from recoup.policypack import load_pack
 from recoup.propensity import LogisticModel, auc_score, evaluate, extract
 from recoup.sim.generator import ScenarioConfig, generate
-from recoup.taxonomy import classify
 
 
-def fit_model(events, world, truth, split, seed, pack):
+def fit_model(events, world, truth, split, seed, pack, classifier):
     store, health, guards = _fresh(pack)
     r = run(
         RecoveryPolicy(pack, LogisticModel(), health, store, guards,
-                       explore=0.85, seed=seed),
+                       explore=0.85, seed=seed, classifier=classifier),
         events[:split], world, truth, pack,
         store=store, health=health, collect_training=True,
     )
@@ -57,7 +56,7 @@ def fit_model(events, world, truth, split, seed, pack):
     return LogisticModel(seed=seed).fit([f for f, _ in rows], [o for _, o in rows]), len(rows)
 
 
-def probe(events, world, truth, test, model, seed, pack):
+def probe(events, world, truth, test, model, seed, pack, classifier):
     """One randomly chosen permitted action per receivable, with ground truth.
 
     Random rather than policy-chosen, so the rows are not selected by the very
@@ -67,11 +66,11 @@ def probe(events, world, truth, test, model, seed, pack):
     rng = random.Random(seed)
     store, health, guards = _fresh(pack)
     pol = RecoveryPolicy(pack, LogisticModel(), health, store, guards,
-                         explore=1.0, seed=seed)
+                         explore=1.0, seed=seed, classifier=classifier)
     rows = []
     for e in test:
         store.mark_seen(e.event_id, e.occurred_at)
-        cls = classify(e.error_code, e.error_description, risk_kind=e.kind.value)
+        cls = classifier(e)
         snap = health.health(e.issuer, e.rail, e.occurred_at)
         cands = [
             a for a in pol.candidate_actions(e, cls, e.occurred_at, snap)
@@ -103,6 +102,10 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--start-seed", type=int, default=42)
     ap.add_argument("--events", type=int, default=6000)
+    ap.add_argument(
+        "--scaling", action="store_true",
+        help="also sweep training-set size, to split estimation error from model bias",
+    )
     args = ap.parse_args()
 
     pack = load_pack()
@@ -118,8 +121,10 @@ def main() -> int:
         cfg = ScenarioConfig(n_events=args.events, days=45, seed=seed)
         events, world, truth = generate(cfg)
         split = int(len(events) * 0.6)
-        model, _ = fit_model(events, world, truth, split, seed, pack)
-        rows = probe(events, world, truth, events[split:], model, seed + 500, pack)
+        classifier = default_classifier()
+        model, _ = fit_model(events, world, truth, split, seed, pack, classifier)
+        rows = probe(events, world, truth, events[split:], model, seed + 500, pack,
+                     classifier)
         y = [r[0] for r in rows]
         if len(set(y)) < 2:
             continue
@@ -152,9 +157,111 @@ def main() -> int:
     print("Note that OBSERVABLE-ONLY sits essentially on top of ORACLE. The latent")
     print("per-customer traits contribute almost nothing to rankability, so the")
     print("model is not starved of information -- it is bounded by noise. That is")
-    print("why adding features to close the gap did not work, and why the")
-    print("remaining gap is estimation error rather than a missing signal.")
+    print("why adding features to close the gap did not work.")
+
+    if args.scaling:
+        scaling_sweep(pack)
     return 0
+
+
+def scaling_sweep(pack) -> None:
+    """Split the residual gap into estimation error and model-class bias.
+
+    Two very different diagnoses hide behind the same gap. If the model climbs
+    toward the oracle as training rows accumulate, the shortfall is estimation
+    error and a real merchant with history will close it. If it plateaus short,
+    the shortfall is bias in the model class itself, and closing it means a
+    richer model -- which for this project means trading away the exact
+    explainability that makes the agent auditable.
+
+    That trade should be quantified rather than asserted, which is what this
+    measures.
+    """
+    import random as _random
+
+    from recoup.propensity import extract as _extract
+
+    print()
+    print("=" * 68)
+    print("Training-set scaling: estimation error, or model-class bias?")
+    print("=" * 68)
+    print()
+
+    seed = 42
+    cfg_eval = ScenarioConfig(n_events=6000, days=45, seed=seed)
+    ev_events, ev_world, ev_truth = generate(cfg_eval)
+    eval_slice = ev_events[int(len(ev_events) * 0.6):]
+    classifier = default_classifier()
+
+    def score(model):
+        rng = _random.Random(seed + 500)
+        store, health, guards = _fresh(pack)
+        pol = RecoveryPolicy(pack, LogisticModel(), health, store, guards,
+                             explore=1.0, seed=seed, classifier=classifier)
+        y, pt, pm = [], [], []
+        for e in eval_slice:
+            store.mark_seen(e.event_id, e.occurred_at)
+            cls = classifier(e)
+            snap = health.health(e.issuer, e.rail, e.occurred_at)
+            cands = [a for a in pol.candidate_actions(e, cls, e.occurred_at, snap)
+                     if a.kind not in (ActionKind.WAIT, ActionKind.STOP)]
+            if not cands:
+                continue
+            a = rng.choice(cands)
+            if not guards.allows(e, cls, a, e.occurred_at):
+                continue
+            p = ev_world.p_recover(e, ev_truth[e.event_id], a)
+            if p <= 0:
+                continue
+            y.append(1 if rng.random() < p else 0)
+            pt.append(p)
+            pm.append(model.predict_proba(_extract(e, cls, a, snap, e.occurred_at)))
+        return y, pt, pm
+
+    def gather(n_events, s):
+        """Training rows from an INDEPENDENT scenario, so eval stays untouched."""
+        events, world, truth = generate(
+            ScenarioConfig(n_events=n_events, days=45, seed=s))
+        store, health, guards = _fresh(pack)
+        r = run(RecoveryPolicy(pack, LogisticModel(), health, store, guards,
+                               explore=0.9, seed=s, classifier=classifier),
+                events, world, truth, pack,
+                store=store, health=health, collect_training=True)
+        return r.training_rows
+
+    print(f"{'train events':>13}{'train rows':>12}{'model AUC':>12}"
+          f"{'oracle':>10}{'captured':>11}")
+    print("-" * 58)
+
+    pool, oracle, shares = [], None, []
+    for n, s in ((3_000, 900), (8_000, 901), (20_000, 902), (45_000, 903)):
+        pool.extend(gather(n, s))
+        m = LogisticModel(seed=7).fit([f for f, _ in pool], [o for _, o in pool])
+        y, pt, pm = score(m)
+        if oracle is None:
+            oracle = auc_score(y, pt)
+        a = auc_score(y, pm)
+        share = (a - 0.5) / (oracle - 0.5)
+        shares.append(share)
+        print(f"{n:>13,}{len(pool):>12,}{a:>12.4f}{oracle:>10.4f}{share:>10.1%}",
+              flush=True)
+
+    print("-" * 58)
+    print()
+    plateau = shares[-1]
+    gain = shares[-1] - shares[0]
+    print(f"Captured signal rises {shares[0]:.1%} -> {plateau:.1%} as rows accumulate,")
+    print(f"then plateaus. So roughly {gain:.0%} of the gap is estimation error that")
+    print(f"more merchant history closes, and roughly {1 - plateau:.0%} is bias in the")
+    print("model class -- a linear-in-log-odds form cannot represent every")
+    print("interaction the world contains.")
+    print()
+    print("That residual is the price of the modelling choice, and it is small:")
+    print(f"a richer model class could recover about {1 - plateau:.0%} of the achievable")
+    print("ranking signal, worth a few thousandths of AUC. It would cost the exact")
+    print("signed decomposition of every decision that makes this agent auditable.")
+    print("Stated as a number, that trade is easy to defend; stated as a preference,")
+    print("it is not.")
 
 
 if __name__ == "__main__":

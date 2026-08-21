@@ -2,16 +2,16 @@ Ablation: 4,000 events, seed 42, held-out slice
 
 arm                       attributed             net  actions   msgs  vs rulebook
 ---------------------------------------------------------------------------------
-rule_based           Rs 74,61,054.00 Rs 74,47,961.30    2,013  1,188        0.0%
-exhaustive_random    Rs 75,91,979.00 Rs 75,80,308.50    3,605  2,041        1.8%
-ev_untrained         Rs 65,07,467.00 Rs 65,01,763.88    3,204  1,622      -12.8%
-recoup              Rs 1,02,89,329.00Rs 1,02,65,793.65    3,024    985       37.9%
+rule_based           Rs 74,97,011.00 Rs 74,83,928.64    2,012  1,167        0.0%
+exhaustive_random    Rs 77,45,273.00 Rs 77,36,417.80    3,573  2,040        3.3%
+ev_untrained         Rs 65,07,467.00 Rs 65,01,763.88    3,204  1,622      -13.2%
+recoup              Rs 1,02,68,347.00Rs 1,02,47,493.70    3,117  1,026       37.0%
 ---------------------------------------------------------------------------------
 
 attribution, rung by rung:
-  spending the budget at random         +1.8%  vs the rulebook
-  + EV architecture, no learning       -14.3%  vs random
-  + fitted propensity model            +58.1%  vs untrained
+  spending the budget at random         +3.3%  vs the rulebook
+  + EV architecture, no learning       -16.0%  vs random
+  + fitted propensity model            +57.8%  vs untrained
 
   Read that middle rung carefully. The architecture WITHOUT a working
   model is worse than acting at random: with P(recover) held constant,
@@ -20,7 +20,7 @@ attribution, rung by rung:
   people who need a rail switch. The machinery only helps once
   something can tell it which actions actually work.
 
-  Essentially all of the lift is the learned model: +58.1%
+  Essentially all of the lift is the learned model: +57.8%
   over the same system with the model switched off.
 
   This is the evidence that the ML earns its place rather than decorating

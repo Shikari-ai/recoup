@@ -59,6 +59,64 @@ from .taxonomy import Classification, alternate_rails, classify
 
 IST = timedelta(minutes=330)
 
+
+class Classifier:
+    """Failure classification for the decision path: table first, triage for the tail.
+
+    Shared by **every** policy arm, deliberately. Classification is an *input*
+    to a decision, not part of the decision logic, so giving one arm a better
+    view of the same event would make the comparison measure the input rather
+    than the policy. The taxonomy has always been shared; triage is an extension
+    of it and is shared on the same principle.
+
+    Triage is consulted only when the lookup table returns UNKNOWN -- roughly
+    2.5% of events in the simulated feed -- and its results are cached by
+    normalised code, so a novel string costs one provider call for the lifetime
+    of the process. All the safety constraints in ``llm/triage.py`` still apply:
+    closed enum, confidence floor, capped attempt budget, and provenance
+    recorded into the ledger so a reviewer can tell a model's opinion from a
+    table lookup.
+
+    With ``triage=None`` this is exactly the bare lookup table, which is what
+    the unit tests use and what runs if no provider is available.
+    """
+
+    __slots__ = ("triage", "consulted", "resolved")
+
+    def __init__(self, triage=None) -> None:
+        self.triage = triage
+        self.consulted = 0
+        self.resolved = 0
+
+    def __call__(self, event: RiskEvent) -> Classification:
+        base = classify(
+            event.error_code, event.error_description, risk_kind=event.kind.value
+        )
+        if self.triage is None or base.failure_class.value != "unknown":
+            return base
+        self.consulted += 1
+        cls, _ = self.triage.classify(
+            event.error_code, event.error_description, risk_kind=event.kind.value
+        )
+        if cls.failure_class.value != "unknown":
+            self.resolved += 1
+        return cls
+
+
+def default_classifier(enable_triage: bool = True) -> Classifier:
+    """Classifier with the offline triage provider attached.
+
+    Offline by default because it needs no key, no network and no configuration,
+    so the decision path is complete out of the box rather than only when
+    someone remembers to wire it.
+    """
+    if not enable_triage:
+        return Classifier()
+    from .llm.base import get_provider
+    from .llm.triage import TriageService
+
+    return Classifier(TriageService(provider=get_provider()))
+
 #: Guardrail rules that clear on their own with the passage of time. If the
 #: only thing standing between us and an action is one of these, WAIT is
 #: correct: come back later and try again.
@@ -180,7 +238,9 @@ class RecoveryPolicy:
         explore: float = 0.0,
         seed: int = 0,
         max_candidates: int = 24,
+        classifier: "Classifier | None" = None,
     ) -> None:
+        self.classifier = classifier or Classifier()
         self.pack = pack
         self.model = model
         self.health = health
@@ -324,7 +384,7 @@ class RecoveryPolicy:
     # -- the decision ------------------------------------------------------
 
     def decide(self, event: RiskEvent, now: datetime) -> Decision:
-        cls = classify(event.error_code, event.error_description, risk_kind=event.kind.value)
+        cls = self.classifier(event)
         snap = self.health.health(event.issuer, event.rail, now)
 
         # A terminal failure is not a scheduling problem. Decide once, stop,
@@ -497,10 +557,18 @@ class BaselinePolicy:
 
     name = "baseline"
 
-    def __init__(self, pack: PolicyPack, store: RecoveryStore, guardrails: GuardrailEngine):
+    def __init__(
+        self,
+        pack: PolicyPack,
+        store: RecoveryStore,
+        guardrails: GuardrailEngine,
+        classifier: "Classifier | None" = None,
+    ):
         self.pack = pack
         self.store = store
         self.guardrails = guardrails
+        # Every arm classifies identically. See Classifier for why.
+        self.classifier = classifier or Classifier()
 
     def decide(self, event: RiskEvent, now: datetime) -> Decision:
         raise NotImplementedError
@@ -526,7 +594,8 @@ class BaselinePolicy:
         )
 
 
-def exhaustive_random(pack, store, guardrails, health, *, seed: int = 0):
+def exhaustive_random(pack, store, guardrails, health, *, seed: int = 0,
+                      classifier: "Classifier | None" = None):
     """Control arm: spends the whole action budget, exercises no judgement.
 
     This isolates the two things that can produce lift, which are easy to
@@ -555,7 +624,8 @@ def exhaustive_random(pack, store, guardrails, health, *, seed: int = 0):
     nothing scores the candidates.
     """
     return RecoveryPolicy(
-        pack, LogisticModel(), health, store, guardrails, explore=1.0, seed=seed
+        pack, LogisticModel(), health, store, guardrails, explore=1.0, seed=seed,
+        classifier=classifier,
     )
 
 
@@ -565,7 +635,7 @@ class NoActionPolicy(BaselinePolicy):
     name = "no_action"
 
     def decide(self, event: RiskEvent, now: datetime) -> Decision:
-        cls = classify(event.error_code, event.error_description, risk_kind=event.kind.value)
+        cls = self.classifier(event)
         return self._wrap(event, cls, Action(ActionKind.STOP, now), now, "control arm: no action")
 
 
@@ -578,13 +648,14 @@ class FixedRetryPolicy(BaselinePolicy):
 
     name = "fixed_retry"
 
-    def __init__(self, pack, store, guardrails, *, interval_h: int = 24, max_tries: int = 3):
-        super().__init__(pack, store, guardrails)
+    def __init__(self, pack, store, guardrails, classifier=None, *,
+                 interval_h: int = 24, max_tries: int = 3):
+        super().__init__(pack, store, guardrails, classifier)
         self.interval_h = interval_h
         self.max_tries = max_tries
 
     def decide(self, event: RiskEvent, now: datetime) -> Decision:
-        cls = classify(event.error_code, event.error_description, risk_kind=event.kind.value)
+        cls = self.classifier(event)
         tries = self.store.debit_attempts(event.event_id)
         if tries >= self.max_tries:
             return self._wrap(
@@ -634,7 +705,7 @@ class RuleBasedPolicy(BaselinePolicy):
         return None
 
     def decide(self, event: RiskEvent, now: datetime) -> Decision:
-        cls = classify(event.error_code, event.error_description, risk_kind=event.kind.value)
+        cls = self.classifier(event)
         prof = cls.profile
         rec = cls.recoverability
         fc = cls.failure_class.value

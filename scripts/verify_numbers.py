@@ -40,13 +40,26 @@ class Claim:
     render: str = "{}"
     #: Documents that must contain the rendered value. Empty means "any".
     cite: tuple[str, ...] = ("README.md",)
+    #: Round the captured number to this many decimals before rendering. Docs
+    #: quote rounded figures ("ECE 0.012") while artefacts print full precision
+    #: ("0.0119"); without this the check would flag correct prose as stale.
+    #: Declared last so every existing positional call site keeps working.
+    round_to: int | None = None
 
     def extract(self) -> str | None:
         path = RESULTS / self.source
         if not path.exists():
             return None
         m = re.search(self.pattern, path.read_text(encoding="utf-8"), re.M)
-        return m.group(1) if m else None
+        if not m:
+            return None
+        raw = m.group(1)
+        if self.round_to is not None:
+            try:
+                return f"{round(float(raw), self.round_to):.{self.round_to}f}"
+            except ValueError:
+                return raw
+        return raw
 
 
 CLAIMS: tuple[Claim, ...] = (
@@ -61,9 +74,9 @@ CLAIMS: tuple[Claim, ...] = (
           r"vs exhaustive_random\s+gross\s+\+([\d.]+)%", "+{}%",
           ("README.md",)),
     Claim("held-out AUC", "backtest_seed42.txt",
-          r"^AUC\s+0\.(\d{3})", "0.{}", ("README.md",)),
+          r"^AUC\s+([\d.]+)", "{}", ("README.md",), round_to=3),
     Claim("held-out ECE", "backtest_seed42.txt",
-          r"^ECE\s+0\.(\d{3})", "0.{}", ("README.md",)),
+          r"^ECE\s+([\d.]+)", "{}", ("README.md",), round_to=3),
     Claim("terminal recall", "backtest_seed42.txt",
           r"TERMINAL RECALL\s+([\d.]+)", "{}", ("README.md", "docs/EVALUATION.md")),
     Claim("ledger records", "backtest_seed42.txt",
