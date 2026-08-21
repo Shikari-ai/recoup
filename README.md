@@ -1,5 +1,9 @@
 # Recoup
 
+[![CI](https://github.com/Shikari-ai/recoup/actions/workflows/ci.yml/badge.svg)](https://github.com/Shikari-ai/recoup/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 **An autonomous revenue recovery agent for Razorpay merchants.** It detects
 revenue slipping away, diagnoses *why*, and runs a bounded, compliant recovery
 workflow — with a hash-chained audit trail for every rupee it touches.
@@ -139,7 +143,8 @@ compliance costs cannot be reasoned about.
 split, three baselines, organic recovery subtracted, tuned on a different seed.
 Reproducible: same seed → byte-identical results, asserted by
 `test_backtest_is_reproducible_across_hash_seeds`, which spawns subprocesses
-under differing `PYTHONHASHSEED` and compares output byte-for-byte.
+under differing `PYTHONHASHSEED` and compares output byte-for-byte. CI runs that
+gate on every push, on Python 3.11 and 3.12.
 
 **Compliant escalation** — 19 gates: Visa/Mastercard re-presentment caps, RBI
 e-mandate 24h pre-debit notice and AFA threshold, TRAI quiet hours in IST, DND,
