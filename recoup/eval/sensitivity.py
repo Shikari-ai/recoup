@@ -69,10 +69,57 @@ class Row:
     lift_vs_fixed: float
     auc: float
     violations: int
+    agent_actions: int = 0
+    rule_actions: int = 0
+    agent_net: int = 0
+    rule_net: int = 0
+    agent_comms: int = 0
+    rule_comms: int = 0
 
     @property
     def wins(self) -> bool:
         return self.lift_vs_rule > 0
+
+    # -- is the lift bought, or earned? ------------------------------------
+    #
+    # A first version of this scored "value per action" and flagged most worlds
+    # as volume-driven. That metric was wrong, and the reasoning is worth
+    # keeping because the mistake is an easy one to repeat.
+    #
+    # Actions are not uniformly costly. A same-rail retry costs nothing; a
+    # WhatsApp message costs Rs 0.85 and a human escalation Rs 50. Both arms run
+    # under the *same* hard cap of N actions per receivable, and the rulebook
+    # stops early by construction rather than because it is starved -- it used
+    # 1.26 actions per receivable against a cap of 3. Penalising the agent for
+    # spending a free, permitted resource more fully measures timidity, not
+    # efficiency.
+    #
+    # The two measures that actually matter:
+    #
+    #   net_lift    -- recovery after every action cost is deducted. Positive
+    #                  means the extra actions paid for themselves.
+    #   comms_ratio -- messages sent relative to the rulebook. This is the proxy
+    #                  for the cost that is NOT in the objective function:
+    #                  customer annoyance and churn. Winning while messaging a
+    #                  customer base harder is a real concern even when the
+    #                  rupees work out.
+
+    @property
+    def net_lift(self) -> float:
+        return (self.agent_net - self.rule_net) / self.rule_net if self.rule_net else 0.0
+
+    @property
+    def comms_ratio(self) -> float:
+        return self.agent_comms / self.rule_comms if self.rule_comms else 0.0
+
+    @property
+    def bought_with_messages(self) -> bool:
+        """Wins, but only by messaging customers materially harder.
+
+        Not disqualifying, but it is the cost this project does not price, so it
+        is surfaced rather than left for a reviewer to discover.
+        """
+        return self.wins and self.comms_ratio > 1.25
 
 
 def build_scenarios(base: WorldParams | None = None) -> list[Scenario]:
@@ -207,8 +254,8 @@ def run(
     if verbose:
         print(f"sensitivity: {len(scen)} worlds x {n_events:,} events, seed {seed}\n")
         print(f"{'world':<22}{'recoup':>15}{'rule_based':>15}"
-              f"{'vs rule':>10}{'vs fixed':>10}{'AUC':>7}{'viol':>6}")
-        print("-" * 85)
+              f"{'vs rule':>10}{'net':>10}{'msgs':>8}{'AUC':>7}{'viol':>6}")
+        print("-" * 93)
 
     for sc in scen:
         p = sc.pack_mutator(base_pack) if sc.pack_mutator else base_pack
@@ -227,13 +274,19 @@ def run(
             lift_vs_fixed=r.lift_vs("fixed_retry"),
             auc=r.model_report.auc,
             violations=sum(len(a.violations) for a in r.arms.values()),
+            agent_actions=r.agent.total_actions,
+            rule_actions=r.arms["rule_based"].total_actions,
+            agent_net=r.agent.net_paise,
+            rule_net=r.arms["rule_based"].net_paise,
+            agent_comms=r.agent.comms_sent,
+            rule_comms=r.arms["rule_based"].comms_sent,
         )
         rows.append(row)
         if verbose:
-            flag = " " if row.wins else "*"
+            flag = "*" if not row.wins else ("m" if row.bought_with_messages else " ")
             print(f"{sc.name:<22}{rupees(row.agent_paise):>15}{rupees(row.rule_paise):>15}"
-                  f"{row.lift_vs_rule:>9.1%}{flag}{row.lift_vs_fixed:>10.1%}"
-                  f"{row.auc:>7.3f}{row.violations:>6}", flush=True)
+                  f"{row.lift_vs_rule:>9.1%}{flag}{row.net_lift:>10.1%}"
+                  f"{row.comms_ratio:>7.2f}x{row.auc:>7.3f}{row.violations:>6}", flush=True)
 
     if verbose:
         print("-" * 85)
@@ -243,20 +296,40 @@ def run(
 
 def format_summary(rows: list[Row]) -> str:
     lifts = [r.lift_vs_rule for r in rows]
+    nets = [r.net_lift for r in rows]
+    ratios = [r.comms_ratio for r in rows if r.comms_ratio]
     wins = sum(1 for r in rows if r.wins)
+    net_wins = sum(1 for r in rows if r.net_lift > 0)
     losses = [r for r in rows if not r.wins]
+    chatty = [r for r in rows if r.bought_with_messages]
     total_viol = sum(r.violations for r in rows)
 
     out = [
         "",
         f"worlds tested            {len(rows)}",
-        f"agent beats rulebook in  {wins}/{len(rows)}",
+        f"agent beats rulebook in  {wins}/{len(rows)}  on recovered value",
+        f"                         {net_wins}/{len(rows)}  after every action cost is deducted",
         f"lift vs rulebook         median {stats.median(lifts):+.1%}   "
         f"min {min(lifts):+.1%}   max {max(lifts):+.1%}",
-        f"lift vs fixed retry      median "
-        f"{stats.median([r.lift_vs_fixed for r in rows]):+.1%}",
+        f"net of action costs      median {stats.median(nets):+.1%}   "
+        f"min {min(nets):+.1%}   max {max(nets):+.1%}",
+        f"messages vs rulebook     median {stats.median(ratios):.2f}x   "
+        f"max {max(ratios):.2f}x   (customer burden; not priced in the objective)",
         f"guardrail violations     {total_viol}  (across every world)",
     ]
+    if chatty:
+        out += [
+            "",
+            "worlds won while messaging customers >25% harder (marked m above):",
+        ]
+        for r in sorted(chatty, key=lambda x: -x.comms_ratio):
+            out.append(f"  {r.comms_ratio:>5.2f}x messages  {r.name:<22} {r.note}")
+        out += [
+            "",
+            "  The rupees work out in these worlds, but customer annoyance is not in",
+            "  the objective function -- it is only bounded by the comms caps. Treat",
+            "  them as wins with an asterisk.",
+        ]
     if losses:
         out += ["", "worlds where the agent does NOT win, and why:"]
         for r in sorted(losses, key=lambda x: x.lift_vs_rule):
@@ -266,12 +339,12 @@ def format_summary(rows: list[Row]) -> str:
             "These are reported, not hidden. A policy that won in every conceivable",
             "world would be evidence of a rigged simulator rather than a good agent.",
         ]
-    else:
+    elif not chatty:
         out += [
             "",
-            "The agent wins in every perturbed world tested. Treat that with some",
-            "suspicion rather than satisfaction: it means the perturbation grid is",
-            "not yet finding the regime where a rulebook is the better answer.",
+            "The agent wins on merit in every perturbed world tested. Treat that with",
+            "some suspicion rather than satisfaction: it means the perturbation grid",
+            "is not yet finding the regime where a rulebook is the better answer.",
         ]
 
     # Which assumption does the result lean on hardest?

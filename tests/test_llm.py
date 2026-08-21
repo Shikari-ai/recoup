@@ -25,7 +25,7 @@ from recoup.domain import (
     RiskKind,
 )
 from recoup.llm.base import LLMResponse, get_provider
-from recoup.llm.copy import BANNED, MAX_LEN, MessageComposer, validate
+from recoup.llm.copy import MAX_LEN, MessageComposer, validate
 from recoup.llm.stub import StubProvider
 from recoup.llm.triage import MAX_LLM_ATTEMPTS, TriageService
 from recoup.taxonomy import classify

@@ -34,9 +34,9 @@ receivables and every comparison is nonsense.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from ..domain import FailureClass, RiskEvent, rupees
+from ..domain import RiskEvent, rupees
 from ..guardrails import GuardrailEngine
 from ..issuer_health import IssuerHealthMonitor
 from ..ledger import AuditLedger

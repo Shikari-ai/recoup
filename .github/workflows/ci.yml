@@ -25,6 +25,9 @@ jobs:
       - name: Core engine runs on the standard library alone
         run: python -m recoup backtest --events 400 --quiet
 
+      - name: Lint (real errors only)
+        run: ruff check recoup/ tests/ scripts/
+
       - name: Tests
         run: pytest tests/ -q
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 import heapq
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from typing import Any, Callable, Protocol
+from typing import Callable, Protocol
 
 from ..domain import (
     COMMS_ACTIONS,
@@ -289,7 +289,21 @@ def run(
             continue
 
         # Idempotency: one logical action executes exactly once.
-        idem = f"{eid}:{action.kind.value}:{action.execute_at.isoformat()}:{st.actions}"
+        # Idempotency key = the full logical identity of the action. It must not
+        # include mutable state such as "how many actions we have taken so far":
+        # on a genuine replay -- a redelivered webhook, a retried API call -- that
+        # counter will have moved on, the key will differ, and the guard silently
+        # lets the duplicate through. Which, on a debit, is a second charge on a
+        # customer's statement.
+        idem = ":".join(
+            (
+                eid,
+                action.kind.value,
+                action.execute_at.isoformat(),
+                action.rail.value if action.rail else "-",
+                action.channel.value,
+            )
+        )
         if not store.claim_idempotency(idem):
             continue
 

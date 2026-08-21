@@ -44,7 +44,6 @@ from .domain import (
     Action,
     ActionKind,
     Channel,
-    Rail,
     Recoverability,
     RiskEvent,
 )
@@ -364,7 +363,9 @@ class ModelReport:
 
 def auc_score(y: list[int], p: list[float]) -> float:
     """Rank-based AUC (Mann-Whitney U), tie-aware."""
-    pairs = sorted(zip(p, y))
+    if len(y) != len(p):
+        raise ValueError(f"labels and predictions differ in length ({len(y)} vs {len(p)})")
+    pairs = sorted(zip(p, y, strict=True))
     n = len(pairs)
     ranks = [0.0] * n
     i = 0
@@ -380,23 +381,28 @@ def auc_score(y: list[int], p: list[float]) -> float:
     neg = n - pos
     if pos == 0 or neg == 0:
         return 0.5
-    rank_sum = sum(r for r, (_, yy) in zip(ranks, pairs) if yy == 1)
+    rank_sum = sum(r for r, (_, yy) in zip(ranks, pairs, strict=True) if yy == 1)
     return (rank_sum - pos * (pos + 1) / 2) / (pos * neg)
 
 
 def evaluate(y: list[int], p: list[float], n_bins: int = 10) -> ModelReport:
+    if len(y) != len(p):
+        raise ValueError(
+            f"labels and predictions differ in length ({len(y)} vs {len(p)}); "
+            "zip would silently truncate and report metrics over a subset"
+        )
     n = len(y)
     if n == 0:
         return ModelReport(0, 0.0, 0.5, 0.0, 0.0, 0.0, [])
-    brier = sum((pi - yi) ** 2 for pi, yi in zip(p, y)) / n
+    brier = sum((pi - yi) ** 2 for pi, yi in zip(p, y, strict=True)) / n
     eps = 1e-12
     ll = -sum(
         yi * math.log(max(pi, eps)) + (1 - yi) * math.log(max(1 - pi, eps))
-        for pi, yi in zip(p, y)
+        for pi, yi in zip(p, y, strict=True)
     ) / n
 
     buckets: list[list[tuple[float, int]]] = [[] for _ in range(n_bins)]
-    for pi, yi in zip(p, y):
+    for pi, yi in zip(p, y, strict=True):
         b = min(int(pi * n_bins), n_bins - 1)
         buckets[b].append((pi, yi))
     bins, ece = [], 0.0

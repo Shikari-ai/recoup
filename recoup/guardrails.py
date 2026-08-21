@@ -34,7 +34,6 @@ from .domain import (
     Channel,
     GuardrailVerdict,
     MANDATE_RAILS,
-    Rail,
     RiskEvent,
     rupees,
 )

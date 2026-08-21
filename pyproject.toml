@@ -24,7 +24,7 @@ dependencies = []
 [project.optional-dependencies]
 api = ["fastapi>=0.110", "uvicorn>=0.27"]
 llm = ["anthropic>=0.40"]
-dev = ["pytest>=8.0", "pytest-cov>=4.1"]
+dev = ["pytest>=8.0", "pytest-cov>=4.1", "ruff>=0.6"]
 
 [project.scripts]
 recoup = "recoup.cli:main"
@@ -34,6 +34,18 @@ include = ["recoup*"]
 
 [tool.setuptools.package-data]
 recoup = ["api/static/*.html"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# F = pyflakes (real errors: undefined names, unused imports/variables)
+# E9 = syntax errors. Deliberately not enabling stylistic rules: this codebase
+# uses deliberate formatting in places (aligned tables, wrapped prose in
+# docstrings) and a formatter fight would obscure the checks that matter.
+select = ["F", "E9", "B"]
+ignore = ["B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

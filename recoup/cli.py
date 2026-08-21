@@ -15,9 +15,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import timedelta
 
-from .domain import ActionKind, rupees
+from .domain import rupees
 from .policypack import load_pack
 
 

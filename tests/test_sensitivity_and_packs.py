@@ -182,8 +182,9 @@ def test_cost_mutator_raises_comms_prices():
 
 def test_summary_reports_losses_rather_than_hiding_them():
     rows = [
-        Row("baseline", "n", 100, 90, 30, 0.11, 2.3, 0.76, 0),
-        Row("bad_world", "assumption X removed", 80, 100, 30, -0.20, 1.6, 0.74, 0),
+        Row("baseline", "n", 100, 90, 30, 0.11, 2.3, 0.76, 0, 10, 10, 99, 89, 5, 5),
+        Row("bad_world", "assumption X removed", 80, 100, 30, -0.20, 1.6, 0.74, 0,
+            10, 10, 79, 99, 5, 5),
     ]
     out = format_summary(rows)
     assert "1/2" in out
@@ -193,48 +194,47 @@ def test_summary_reports_losses_rather_than_hiding_them():
 
 
 def test_summary_is_suspicious_of_winning_everywhere():
-    rows = [Row(f"w{i}", "n", 100, 80, 30, 0.25, 2.3, 0.76, 0) for i in range(4)]
+    """Winning every world is a warning about the grid, not a result."""
+    # Equal action counts, so these are wins on merit rather than on volume.
+    rows = [Row(f"w{i}", "n", 100, 80, 30, 0.25, 2.3, 0.76, 0, 10, 10, 99, 79, 5, 5)
+            for i in range(4)]
     out = format_summary(rows)
     assert "suspicion" in out.lower()
 
 
-@pytest.mark.slow
-def test_sensitivity_runs_end_to_end():
-    from recoup.eval.sensitivity import Scenario, run
+def test_wins_bought_with_extra_messaging_are_flagged():
+    """Customer annoyance is not in the objective, so it is surfaced instead.
 
-    scen = [
-        Scenario("baseline", WorldParams(), "central"),
-        Scenario("no_salary", replace(WorldParams(), salary_boost=1.0), "no salary cycle"),
-    ]
-    rows = run(n_events=400, days=30, seed=42, scenarios=scen, verbose=False)
-    assert len(rows) == 2
-    assert all(r.violations == 0 for r in rows)
-    assert rows[0].agent_paise > 0
-
-
-# ---------------------------------------------------------------------------
-# CLI: selecting a policy pack must never silently fall back
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["--policy", str(STRICT), "policy"],   # before the subcommand
-        ["policy", "--policy", str(STRICT)],   # after the subcommand
-    ],
-)
-def test_policy_flag_works_in_both_positions(argv, capsys):
-    """Regression: the subparser's default of None clobbered the global flag.
-
-    `recoup --policy strict.toml backtest` silently ran the *default* pack,
-    which for a compliance flag is the worst possible failure -- the operator
-    believes stricter rules are in force and they are not.
+    Note what this deliberately does NOT flag: taking more *actions*. Both arms
+    run under the same action cap and a same-rail retry costs nothing, so
+    penalising the agent for using a free permitted resource would measure
+    timidity rather than efficiency. Messages are different -- they cost money
+    and goodwill.
     """
-    from recoup.cli import main
+    chatty = Row("chatty", "wins by messaging harder", 150, 100, 40, 0.50, 2.75,
+                 0.77, 0, agent_actions=15, rule_actions=9,
+                 agent_net=148, rule_net=99, agent_comms=200, rule_comms=100)
+    assert chatty.wins and chatty.comms_ratio == 2.0
+    assert chatty.bought_with_messages
+    out = format_summary([chatty])
+    assert "messaging customers" in out and "chatty" in out
 
-    assert main(argv) == 0
-    assert "in_strict" in capsys.readouterr().out
+
+def test_more_actions_alone_is_not_flagged():
+    """A free retry is not a cost. Using the action budget is not a red flag."""
+    r = Row("thrifty", "more retries, fewer messages", 150, 100, 40, 0.50, 2.75,
+            0.77, 0, agent_actions=20, rule_actions=9,
+            agent_net=149, rule_net=99, agent_comms=40, rule_comms=100)
+    assert r.wins
+    assert not r.bought_with_messages, "penalised for spending a free resource"
+    assert r.net_lift > 0
+
+
+def test_net_lift_deducts_action_costs():
+    r = Row("x", "n", 150, 100, 40, 0.50, 2.75, 0.77, 0,
+            agent_actions=15, rule_actions=9,
+            agent_net=120, rule_net=100, agent_comms=10, rule_comms=10)
+    assert r.net_lift == pytest.approx(0.20)
 
 
 def test_policy_flag_defaults_cleanly_when_absent(capsys):

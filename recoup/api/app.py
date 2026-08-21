@@ -35,7 +35,6 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
 
     from ..eval.backtest import _fresh, _warm_health, backtest
     from ..eval.report import ARM_NOTES
-    from ..guardrails import GuardrailEngine
     from ..ingest import WebhookError, from_webhook_bytes
     from ..policy import RecoveryPolicy
     from ..sim.generator import ScenarioConfig, generate

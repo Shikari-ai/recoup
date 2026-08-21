@@ -26,7 +26,6 @@ from recoup.domain import (
     ActionKind,
     Channel,
     Decision,
-    Rail,
     RiskEvent,
 )
 from recoup.eval.runner import audit_executed_actions, run
@@ -190,7 +189,7 @@ def test_auditor_detects_a_planted_quiet_hours_violation(scenario):
     the auditor needs its own test: plant an action that plainly breaks a rule
     and assert it is caught, with the correct rule named.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from recoup.eval.runner import audit_executed_actions
     from recoup.store import ActionLogEntry, instrument_key
