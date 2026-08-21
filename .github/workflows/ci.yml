@@ -31,6 +31,14 @@ jobs:
       - name: Tests
         run: pytest tests/ -q
 
+      # Documentation drifts from the code silently: nothing errors when a
+      # README quotes a figure from a configuration that no longer exists. This
+      # re-derives every headline number from the committed artefacts in
+      # results/ and fails if a document still cites the old one. It caught two
+      # stale figures the first time it ran.
+      - name: Documented figures match committed results
+        run: python scripts/verify_numbers.py
+
       # Reproducibility is the basis of every number reported in the README,
       # and it broke once already (see docs/ENGINEERING_LOG.md §2). A set of
       # str-Enums iterating in hash-randomised order fed the outage RNG, so the

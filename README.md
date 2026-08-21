@@ -505,7 +505,8 @@ policies/in_default.toml   Every compliance limit, as data not code
 policies/strict.toml       A conservative pack — same engine, tighter rules
 docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
-scripts/                   stability · learning_curve · tune_model · tune_stopping
+scripts/                   stability · learning_curve · ablation · sensitivity
+                           health_signal · tune_* · verify_docs · verify_numbers
 results/                   committed backtest, stability, sensitivity, curve output
 tests/                     223 tests, incl. adversarial + no-leakage
 ```
@@ -526,6 +527,7 @@ python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?
 python scripts/health_signal.py          # when does outage detection work?
 python scripts/verify_docs.py            # execute every command in these docs
+python scripts/verify_numbers.py         # every quoted figure vs results/
 ```
 
 ---

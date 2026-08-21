@@ -120,14 +120,15 @@ python scripts/stability.py --seeds 8 --events 4000
 
 Reported in `results/stability_8_seeds.txt`. The distribution matters more than any
 single figure: **lift is heavy-tailed**, because recovered value is dominated by
-a small number of large B2B receivables, so the spread is wide (min +5.3%, max
-+57.3%) even though every seed is positive. A project quoting only its best seed
+a small number of large B2B receivables, so the spread is wide (min +3.2%, max
++54.7%) even though every seed is positive. A project quoting only its best seed
 would be lying by selection, so the full range is reported alongside the median:
 
 ```
-lift vs rule_based    median +30.5%   mean +30.7%   min +5.3%   max +57.3%
-lift vs fixed_retry   median +291.5%  mean +284.9%  min +198.7% max +374.6%
-pooled (all seeds)    +28.8%          wins 8/8 seeds
+lift vs rule_based    median +29.9%   mean +28.3%   min +3.2%   max +54.7%
+lift vs fixed_retry   median +274.1%  mean +288.7%  min +192.8% max +445.9%
+pooled (all seeds)    +26.4%          wins 8/8 seeds
+AUC median 0.771      ECE median 0.015
 guardrail violations across every seed and arm: 0
 ```
 
