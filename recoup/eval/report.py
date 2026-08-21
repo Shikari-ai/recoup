@@ -147,11 +147,20 @@ def compliance_section(r: BacktestResult) -> str:
     return "\n".join(lines)
 
 
+def taxonomy_section(r: BacktestResult) -> str:
+    """Per-class precision/recall for the deterministic classifier.
+
+    Overall accuracy hides the only errors that matter. A terminal failure read
+    as actionable is an unauthorised debit; a wrong class with the same recovery
+    strategy costs nothing. They are separated here.
+    """
+    if r.taxonomy is None:
+        return f"taxonomy exact-match {r.taxonomy_accuracy:.3f}"
+    return r.taxonomy.format()
+
+
 def model_section(r: BacktestResult) -> str:
     lines = [
-        f"taxonomy exact-match  {r.taxonomy_accuracy:.3f} on held-out events",
-        f"unmapped error rate   {r.unknown_rate:.3f}  (routed to LLM triage)",
-        "",
         r.model_report.format(),
         "",
         "top learned coefficients (signed, logit scale):",
@@ -200,7 +209,11 @@ def full_report(r: BacktestResult) -> str:
             "",
             compliance_section(r),
             "",
-            "-- MODEL QUALITY " + "-" * 61,
+            "-- TAXONOMY (held out, lookup table only, no LLM) " + "-" * 28,
+            "",
+            taxonomy_section(r),
+            "",
+            "-- PROPENSITY MODEL " + "-" * 58,
             "",
             model_section(r),
             "",

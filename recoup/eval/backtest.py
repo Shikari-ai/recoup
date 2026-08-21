@@ -51,6 +51,7 @@ from ..propensity import LogisticModel, ModelReport, evaluate
 from ..sim.generator import ScenarioConfig, generate
 from ..sim.world import World
 from ..store import RecoveryStore
+from .classifier import TaxonomyReport, evaluate_taxonomy
 from .runner import RunResult, run
 
 
@@ -66,6 +67,7 @@ class BacktestResult:
     ledger: AuditLedger | None = None
     taxonomy_accuracy: float = 0.0
     unknown_rate: float = 0.0
+    taxonomy: TaxonomyReport | None = None
 
     @property
     def baseline(self) -> RunResult:
@@ -143,16 +145,11 @@ def backtest(
         f"(chronological split at {events[split].occurred_at.date()})"
     )
 
-    # -- taxonomy accuracy, measured independently of recovery -------------
-    from ..taxonomy import classify
-
-    ok = unk = 0
-    for e in test_events:
-        c = classify(e.error_code, e.error_description, risk_kind=e.kind.value)
-        ok += c.failure_class is truth[e.event_id]
-        unk += c.failure_class is FailureClass.UNKNOWN
-    tax_acc = ok / len(test_events)
-    unk_rate = unk / len(test_events)
+    # -- taxonomy quality, measured independently of recovery --------------
+    #    Scored on the held-out slice, and on the lookup table ALONE with no
+    #    LLM triage in the loop, so the two components can be judged separately.
+    tax = evaluate_taxonomy(test_events, truth)
+    tax_acc, unk_rate = tax.accuracy, tax.unknown_rate
 
     # -- 2. behaviour policy collects training data ------------------------
     say(f"[2/5] collecting training data (behaviour policy, explore={explore:g})...")
@@ -232,4 +229,5 @@ def backtest(
         ledger=ledger,
         taxonomy_accuracy=tax_acc,
         unknown_rate=unk_rate,
+        taxonomy=tax,
     )

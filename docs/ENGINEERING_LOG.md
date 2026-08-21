@@ -220,6 +220,88 @@ reflection.
 
 ---
 
+## 7. Three layers disagreed, and it resolved as "do nothing"
+
+**Symptom.** Not a crash. A per-class report showed `do_not_honour` — the
+issuer's catch-all decline, **158 receivables and 6.6% of the batch** — with
+`0 actions` and `0 recovered`. The agent was silently abandoning it.
+
+**Cause.** Three layers held incompatible views of the same class:
+
+| Layer | Said |
+|---|---|
+| `Recoverability` | `TERMINAL` — never act |
+| `preferred_actions` | `[retry_alt_rail, stop]` — one alternate-rail attempt |
+| Default policy pack | *not* in `never_retry_classes` — permitted |
+
+The taxonomy's own comment said "capped at one alternate-rail attempt rather
+than treated as retryable". Its `Recoverability` said the opposite. When I
+later added a terminal short-circuit to the policy (correct, from entry 4's
+fix), that short-circuit started winning, and the class went dark.
+
+The domain view matters here too: ISO-8583 code 05 is the single most common
+decline and is genuinely ambiguous — sometimes a soft fraud hold, often
+recoverable on a different rail. Treating it as *never retry* is over-cautious,
+and my own code comment already said so.
+
+**Fix.** Reclassified as `INSTRUMENT_CHANGE` — the issuer is saying it will not
+honour *this* card right now, so a different rail is the right response, capped
+at one attempt. The strict pack still overrides it to terminal via
+`never_retry_classes`, which is the layering working as intended: a risk team
+that disagrees changes a TOML file, not the engine.
+
+**The uncomfortable part.** This *lowered* my headline number, from +31.2% to
++25.0%. Both arms gained on the class — the rulebook shares the taxonomy — and
+the rulebook gained slightly more.
+
+I kept it. Reverting a correctness fix to protect a headline is the same
+failure as entry 3 in the opposite direction, and it would have been much
+harder to defend having already written up entry 3.
+
+**Fix, part two:** a test that makes the whole bug class unrepresentable —
+
+```python
+for fc, p in PROFILES.items():
+    if p.recoverability is not Recoverability.TERMINAL:
+        continue
+    assert p.preferred_actions == (ActionKind.STOP,)
+    assert p.max_attempts == 0
+```
+
+**Lesson.** When the same fact is expressed in three places, they will
+eventually disagree, and the disagreement resolves *silently* in whichever
+layer runs first. Either make one layer authoritative or write the test that
+asserts they agree. Also: a per-class breakdown found in ten seconds what
+aggregate accuracy had hidden for the whole build.
+
+---
+
+## 8. A compliance flag that silently did nothing
+
+**Symptom.** An audit of documented commands against the actual CLI found that
+`recoup backtest --policy policies/strict.toml` — a command written in
+`COMPLIANCE.md` — ran the **default** pack. No error, no warning.
+
+**Cause.** `--policy` was a global flag defined before the subcommand. Adding it
+to the subparsers too is the obvious fix, and the obvious fix is wrong: with
+both defined, the subparser's default of `None` **overwrites** the global value,
+so `recoup --policy strict.toml backtest` would have silently reverted to the
+default pack.
+
+**Why it is worse than a normal bug.** For most flags a silent fallback is an
+annoyance. For this one the operator believes stricter compliance rules are in
+force and they are not. That is the exact failure the guardrail layer exists to
+prevent, sitting in the argument parser.
+
+**Fix.** `default=argparse.SUPPRESS` on the subparser flag, so an absent value
+leaves the global untouched, plus a parametrised test asserting both orderings
+select the strict pack and that omitting it still selects the default.
+
+**Lesson.** Auditing the docs against the code found this, not testing. Every
+command in a README is a claim, and claims should be executed.
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`

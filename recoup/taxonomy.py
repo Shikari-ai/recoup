@@ -256,16 +256,27 @@ PROFILES: dict[FailureClass, FailureProfile] = {
     ),
     FailureClass.DO_NOT_HONOUR: FailureProfile(
         FailureClass.DO_NOT_HONOUR,
-        Recoverability.TERMINAL,
+        # INSTRUMENT_CHANGE, not TERMINAL. This class sat under TERMINAL while
+        # its own preferred_actions allowed an alternate-rail attempt and the
+        # default pack did not list it as never-retry -- three layers
+        # disagreeing, which resolved as "do nothing" for 6.6% of receivables.
+        #
+        # Treating it as an instrument problem is what the issuer is actually
+        # telling us: it will not honour *this* card right now. A different rail
+        # is the correct response, capped at one attempt because the decline is
+        # genuinely ambiguous. A risk team that disagrees can move it to
+        # never_retry_classes in the pack -- policies/strict.toml does exactly
+        # that, without touching this file.
+        Recoverability.INSTRUMENT_CHANGE,
         silent_retry_ok=False,
         counts_against_network_cap=True,
         min_backoff_s=DAY,
         max_attempts=1,
-        preferred_actions=(ActionKind.RETRY_ALT_RAIL, ActionKind.STOP),
+        preferred_actions=(ActionKind.RETRY_ALT_RAIL, ActionKind.SEND_NUDGE, ActionKind.STOP),
         note=(
             "Issuer's catch-all decline. Genuinely ambiguous: sometimes a soft "
-            "fraud hold, sometimes a hard block. Capped at one alternate-rail "
-            "attempt rather than treated as retryable."
+            "fraud hold, sometimes a hard block. One alternate-rail attempt, "
+            "never a same-rail retry."
         ),
     ),
     FailureClass.UNKNOWN: FailureProfile(

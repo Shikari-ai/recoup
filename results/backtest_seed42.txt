@@ -12,99 +12,134 @@ arm                           attributed     net of cost   events  actions   msg
 ---------------------------------------------------------------------------------------
 no_action (control)              Rs 0.00         Rs 0.00        0        0      0     0
 fixed_retry (24h x3)     Rs 48,99,078.00 Rs 48,99,078.00      323    2,854      0     0
-rule_based (rulebook)   Rs 1,45,60,241.00Rs 1,45,40,219.37      611    2,843  1,669     0
-recoup (this agent)     Rs 1,91,01,326.00Rs 1,90,67,710.04      982    4,226  1,229     0
+rule_based (rulebook)   Rs 1,49,88,639.00Rs 1,49,68,579.01      667    3,048  1,727     0
+recoup (this agent)     Rs 1,87,30,144.00Rs 1,86,96,927.26    1,029    4,453  1,305     0
 ---------------------------------------------------------------------------------------
 
 lift of recoup over each baseline (agent-attributed recovery):
   vs no_action (control)      gross      n/a   net of cost      n/a
-  vs fixed_retry (24h x3)     gross  +289.9%   net of cost  +289.2%
-  vs rule_based (rulebook)    gross   +31.2%   net of cost   +31.1%
+  vs fixed_retry (24h x3)     gross  +282.3%   net of cost  +281.6%
+  vs rule_based (rulebook)    gross   +25.0%   net of cost   +24.9%
 
 -- EFFICIENCY ----------------------------------------------------------------
 
 arm                               cost   cost/Re recovered  actions/recovery
 ----------------------------------------------------------------------------
 fixed_retry (24h x3)           Rs 0.00              0.0000              8.84
-rule_based (rulebook)     Rs 20,021.63              0.0014              4.65
-recoup (this agent)       Rs 33,615.96              0.0018              4.30
+rule_based (rulebook)     Rs 20,059.99              0.0013              4.57
+recoup (this agent)       Rs 33,216.74              0.0018              4.33
 
 -- WHERE THE LIFT COMES FROM -------------------------------------------------
 
 failure class              seen          recoup     fixed_retry         delta
 -----------------------------------------------------------------------------
-insufficient_funds          527 Rs 40,89,914.00 Rs 22,34,737.00Rs 18,55,177.00
-abandoned                   450  Rs 1,94,288.00    Rs 54,546.00Rs 1,39,742.00
-invoice_unpaid              271 Rs 99,29,784.00    Rs 17,615.00Rs 99,12,169.00
-auth_failed                 256  Rs 6,10,803.00  Rs 1,02,096.00Rs 5,08,707.00
-issuer_down                 181 Rs 12,38,887.00  Rs 9,87,473.00Rs 2,51,414.00
-do_not_honour               158         Rs 0.00  Rs 1,95,087.00-Rs 1,95,087.00
-collect_expired             105  Rs 1,01,588.00    Rs 35,927.00  Rs 65,661.00
+insufficient_funds          527 Rs 33,10,820.00 Rs 22,34,737.00Rs 10,76,083.00
+abandoned                   450  Rs 1,92,360.00    Rs 54,546.00Rs 1,37,814.00
+invoice_unpaid              271 Rs 99,29,166.00    Rs 17,615.00Rs 99,11,551.00
+auth_failed                 256  Rs 5,76,434.00  Rs 1,02,096.00Rs 4,74,338.00
+issuer_down                 181 Rs 12,40,065.00  Rs 9,87,473.00Rs 2,52,592.00
+do_not_honour               158  Rs 4,41,981.00  Rs 1,95,087.00Rs 2,46,894.00
+collect_expired             105  Rs 1,02,689.00    Rs 35,927.00  Rs 66,762.00
 velocity_limit               89 Rs 12,13,715.00  Rs 3,65,302.00Rs 8,48,413.00
 gateway_error                80  Rs 6,86,842.00  Rs 7,09,602.00 -Rs 22,760.00
 network_timeout              69  Rs 4,80,935.00  Rs 1,92,541.00Rs 2,88,394.00
-mandate_paused               46    Rs 19,257.00         Rs 0.00  Rs 19,257.00
+mandate_paused               46    Rs 19,824.00         Rs 0.00  Rs 19,824.00
 card_expired                 41  Rs 2,29,508.00         Rs 0.00Rs 2,29,508.00
 
 -- ACTION MIX ----------------------------------------------------------------
 
 action                          recoup   rule_based  fixed_retry
 ----------------------------------------------------------------
-escalate_human                     657          385            0
-request_instrument_update          118            0            0
-retry_alt_rail                   1,683          107            0
-retry_same_rail                    657          682        2,854
-send_nudge                       1,111        1,021            0
-send_payment_link                    0          648            0
+escalate_human                     648          385            0
+request_instrument_update          121            0            0
+retry_alt_rail                   1,836          254            0
+retry_same_rail                    664          682        2,854
+send_nudge                       1,182        1,080            0
+send_payment_link                    2          647            0
 
 -- COMPLIANCE ----------------------------------------------------------------
 
 policy pack           in_default
-actions executed      9,923 across all arms
+actions executed      10,355 across all arms
 guardrail violations  0
-late blocks (recoup)  24  (planned, then correctly refused at execution time)
-audit ledger          11,961 records, chain intact, head=0d9b0cabf37a
+late blocks (recoup)  26  (planned, then correctly refused at execution time)
+audit ledger          12,379 records, chain intact, head=dc6e62b0c742
 
   Zero violations is the claim being made, and it is checkable: every
   executed action re-ran the full gate set at execution time. See
   tests/test_guardrails.py, including an adversarial policy that
   actively tries to breach every limit and is stopped by all of them.
 
--- MODEL QUALITY -------------------------------------------------------------
+-- TAXONOMY (held out, lookup table only, no LLM) ----------------------------
 
-taxonomy exact-match  0.970 on held-out events
-unmapped error rate   0.022  (routed to LLM triage)
+n=2,400   accuracy=0.9704   macro-F1=0.9396   unmapped=0.0225
 
-n=4975  base_rate=0.178
-AUC       0.7750   (discrimination: can it rank?)
-Brier     0.1219   (lower is better)
-Log-loss  0.3929
-ECE       0.0067   (calibration: are the numbers real?)
+  failure class              prec  recall     F1  support
+  -------------------------------------------------------
+  insufficient_funds        1.000   0.983  0.991      527
+  abandoned                 0.972   1.000  0.986      450
+  invoice_unpaid            0.985   1.000  0.993      271
+  auth_failed               1.000   1.000  1.000      256
+  issuer_down               1.000   0.901  0.948      181
+  do_not_honour             1.000   1.000  1.000      158
+  collect_expired           1.000   1.000  1.000      105
+  velocity_limit            1.000   1.000  1.000       89
+  gateway_error             1.000   1.000  1.000       80
+  network_timeout           1.000   1.000  1.000       69
+  mandate_paused            1.000   0.674  0.805       46
+  card_expired              1.000   1.000  1.000       41
+  token_expired             1.000   0.641  0.781       39
+  invalid_instrument        1.000   1.000  1.000       37
+
+  errors by consequence, not by count:
+    dangerous          0   terminal failure read as actionable
+    over-cautious      0   actionable failure read as terminal
+    benign            71   wrong class, same recovery strategy
+
+  TERMINAL RECALL  1.0000   (26 terminal failures in the slice)
+  Not one revoked mandate, flagged payment or stolen card was misread
+  as something the agent may act on.
+
+  most frequent confusions (true -> predicted):
+    issuer_down              -> unknown                     15
+    account_closed           -> unknown                     13
+    token_expired            -> unknown                     10
+    mandate_paused           -> unknown                     10
+    insufficient_funds       -> unknown                      6
+    mandate_paused           -> abandoned                    4
+
+-- PROPENSITY MODEL ----------------------------------------------------------
+
+n=5419  base_rate=0.172
+AUC       0.7717   (discrimination: can it rank?)
+Brier     0.1194   (lower is better)
+Log-loss  0.3865
+ECE       0.0154   (calibration: are the numbers real?)
 
   reliability   predicted -> actual   n
-        0.054 ->  0.055    2037  #
-        0.143 ->  0.132    1292  ###
-        0.245 ->  0.244     692  #######
-        0.348 ->  0.345     415  ##########
-        0.442 ->  0.443     255  #############
-        0.547 ->  0.612     201  ##################
-        0.647 ->  0.652      66  ###################
-        0.726 ->  0.706      17  #####################
+        0.053 ->  0.060    2514  #
+        0.141 ->  0.150    1210  ####
+        0.247 ->  0.220     654  ######
+        0.344 ->  0.304     392  #########
+        0.444 ->  0.395     258  ###########
+        0.546 ->  0.563     213  ################
+        0.644 ->  0.616     151  ##################
+        0.731 ->  0.704      27  #####################
 
 top learned coefficients (signed, logit scale):
-  delay_log                     -0.717  ++++++
-  ch_email                      -0.598  +++++
-  x_silent_retry_auth           -0.579  +++++
-  act_retry_same_rail            0.577  +++++
-  rec_retry_only                 0.565  +++++
-  fc_unknown                    -0.550  ++++
-  rec_unknown                   -0.550  ++++
-  fc_insufficient_funds         -0.497  ++++
-  x_insuff_squeeze              -0.497  ++++
-  is_debit                       0.491  ++++
-  ch_whatsapp                    0.411  +++
-  x_comms_instrument_dead       -0.410  +++
-  x_insuff_salary                0.394  +++
+  x_insuff_salary                0.902  ++++++++
+  fc_insufficient_funds         -0.761  ++++++
+  fc_issuer_down                 0.652  +++++
+  ch_email                      -0.642  +++++
+  act_retry_same_rail            0.560  +++++
+  delay_log                     -0.528  ++++
+  is_debit                       0.498  ++++
+  rec_retry_only                 0.488  ++++
+  x_comms_instrument_dead       -0.483  ++++
+  x_silent_retry_auth           -0.476  ++++
+  fc_unknown                    -0.448  ++++
+  rec_unknown                   -0.448  ++++
+  x_insuff_squeeze              -0.441  +++
 
 ==============================================================================
 Numbers are from a simulation. The absolute rupee figures are a property

@@ -55,26 +55,49 @@ Held-out backtest, 6,000 at-risk receivables over 45 days, seed 42:
 |---|---:|---:|---:|
 | `no_action` (control) | Rs 0 | 0 | 0 |
 | `fixed_retry` (24h × 3) | Rs 48,99,078 | 2,854 | 0 |
-| `rule_based` (**strong** rulebook) | Rs 1,45,60,241 | 2,843 | 0 |
-| **`recoup`** | **Rs 1,91,01,326** | 4,226 | **0** |
+| `rule_based` (**strong** rulebook) | Rs 1,49,88,639 | 3,048 | 0 |
+| **`recoup`** | **Rs 1,87,30,144** | 4,453 | **0** |
 
-**+31.2% over the strong rulebook · +289.9% over fixed retry · AUC 0.775 ·
-ECE 0.007 · zero guardrail violations** — and it does it in *fewer* actions per
-recovery than the rulebook (4.30 vs 4.65).
+**+25.0% over the strong rulebook · +282.3% over fixed retry · AUC 0.772 ·
+ECE 0.015 · zero guardrail violations** — and it does it in *fewer* actions per
+recovery than the rulebook (4.33 vs 4.57).
 
 One seed is an anecdote, so `scripts/stability.py` re-runs the entire pipeline
 across 8 independent scenarios of 4,000 receivables each:
 
 ```
-lift vs rule_based    median +30.5%   mean +30.7%   min +5.3%   max +57.3%
-lift vs fixed_retry   median +291.5%  mean +284.9%  min +198.7% max +374.6%
-pooled (all seeds)    +28.8%          wins 8/8 seeds
-AUC median 0.759      ECE median 0.018
+lift vs rule_based    median +29.1%   mean +25.8%   min -3.3%   max +51.0%
+lift vs fixed_retry   median +298.5%  mean +278.2%  min +179.7% max +361.9%
+pooled (all seeds)    +24.3%          wins 7/8 seeds
+AUC median 0.765      ECE median 0.016
 guardrail violations across every seed and arm: 0
 ```
 
 Lift is heavy-tailed — recovered value is dominated by a few large B2B
-receivables — so the full range is reported rather than the best seed.
+receivables — so the full range is reported, including the seed where the agent
+loses, rather than the best one.
+
+### The classifier is measured by consequence, not by accuracy
+
+Overall taxonomy accuracy is **97.0%** on held-out events (macro-F1 0.940), and
+that number is nearly useless on its own — the classes are imbalanced and their
+errors are wildly asymmetric. So `recoup backtest` splits every misclassification
+by what it would actually cause:
+
+```
+  errors by consequence, not by count:
+    dangerous          0   terminal failure read as actionable
+    over-cautious      0   actionable failure read as terminal
+    benign            71   wrong class, same recovery strategy
+
+  TERMINAL RECALL  1.0000   (26 terminal failures in the slice)
+```
+
+`insufficient_funds` read as `gateway_error` costs a wasted attempt.
+`mandate_revoked` read as `insufficient_funds` is an **unauthorised debit**.
+Accuracy counts those identically. **Terminal recall** is the number that
+matters, and every confusion the classifier does make lands in `unknown` —
+which fails closed to one attempt and no silent retry.
 
 ### It also survives having its assumptions taken away
 
@@ -222,7 +245,7 @@ verification at that exact sequence number.
 
 ```bash
 python -m recoup backtest --ledger artifacts/audit.jsonl
-python -m recoup verify   artifacts/audit.jsonl   # OK  11961 records, chain intact
+python -m recoup verify   artifacts/audit.jsonl   # OK  12379 records, chain intact
 python -m recoup audit    artifacts/audit.jsonl evt_001081
 ```
 
@@ -261,7 +284,7 @@ proposed enough violations to be worth testing, then verifies by **independent
 post-hoc replay** that not one got through.
 
 ```bash
-pytest tests/ -q          # 161 passed
+pytest tests/ -q          # 176 passed
 ```
 
 ---
@@ -403,7 +426,7 @@ docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
 scripts/                   stability · learning_curve · tune_model · tune_stopping
 results/                   committed backtest, stability, sensitivity, curve output
-tests/                     161 tests, incl. adversarial + no-leakage
+tests/                     176 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -416,7 +439,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 19 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 161 tests
+pytest tests/ -q                         # 176 tests
 python scripts/stability.py --seeds 8    # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 ```

@@ -193,7 +193,7 @@ the exact sequence number where the chain broke.
 ```bash
 python -m recoup backtest --ledger artifacts/audit.jsonl
 python -m recoup verify artifacts/audit.jsonl
-python -m recoup audit artifacts/audit.jsonl evt_000271
+python -m recoup audit artifacts/audit.jsonl evt_001081
 ```
 
 Each record carries the classification *and its provenance* —
@@ -232,5 +232,5 @@ The test asserts:
 
 ```
 $ pytest tests/ -q
-161 passed
+176 passed
 ```

@@ -242,3 +242,87 @@ def test_policy_flag_defaults_cleanly_when_absent(capsys):
 
     assert main(["policy"]) == 0
     assert "in_default" in capsys.readouterr().out
+
+
+def test_do_not_honour_is_governed_by_the_pack_not_hardcoded():
+    """The clearest demonstration that compliance rules are data.
+
+    'Do not honour' (ISO 05) is the issuer's catch-all decline and is genuinely
+    ambiguous -- industry practice does re-present it, often successfully. The
+    taxonomy therefore treats it as an instrument problem worth exactly one
+    alternate-rail attempt.
+
+    A risk team that disagrees does not need a code change: listing the class in
+    `never_retry_classes` makes the guardrail veto every action, and the policy
+    stops. Same engine, same taxonomy, opposite behaviour, decided in a file a
+    non-engineer can read.
+
+    Regression note: this class previously carried Recoverability.TERMINAL while
+    its own preferred_actions permitted an alternate-rail attempt and the
+    default pack did not list it as never-retry. Three layers disagreed and it
+    resolved as "do nothing" on 6.6% of receivables.
+    """
+    from datetime import datetime, timezone
+
+    from recoup.domain import (
+        ActionKind, Channel, CustomerContext, Rail, Recoverability, RiskEvent, RiskKind,
+    )
+    from recoup.guardrails import GuardrailEngine
+    from recoup.issuer_health import IssuerHealthMonitor
+    from recoup.policy import RecoveryPolicy
+    from recoup.propensity import LogisticModel
+    from recoup.store import RecoveryStore
+    from recoup.taxonomy import PROFILES
+
+    from recoup.domain import FailureClass as FC
+
+    # The taxonomy's own view: an instrument problem, capped at one attempt.
+    prof = PROFILES[FC.DO_NOT_HONOUR]
+    assert prof.recoverability is Recoverability.INSTRUMENT_CHANGE
+    assert prof.max_attempts == 1
+    assert not prof.silent_retry_ok, "a same-rail retry must never be offered"
+    assert ActionKind.RETRY_SAME_RAIL not in prof.preferred_actions
+
+    t0 = datetime(2026, 6, 15, 6, 0, tzinfo=timezone.utc)
+
+    def decide(pack_path):
+        pack = load_pack(pack_path)
+        store = RecoveryStore()
+        pol = RecoveryPolicy(
+            pack, LogisticModel(), IssuerHealthMonitor(), store,
+            GuardrailEngine(pack, store), seed=1,
+        )
+        ev = RiskEvent(
+            event_id="e1", merchant_id="m", kind=RiskKind.PAYMENT_FAILED,
+            amount_paise=500_000, rail=Rail.CARD, occurred_at=t0,
+            customer=CustomerContext("c1", contactable=(Channel.SMS,)),
+            error_code="do_not_honour", issuer="HDFC",
+        )
+        store.mark_seen("e1", t0)
+        return pol.decide(ev, t0)
+
+    permissive = decide(DEFAULT_PACK)
+    assert permissive.action.kind is ActionKind.RETRY_ALT_RAIL
+    assert permissive.action.rail is not Rail.CARD
+
+    strict = decide(STRICT)
+    assert strict.action.kind is ActionKind.STOP
+
+
+def test_no_profile_claims_terminal_while_offering_actions():
+    """Guards against the class of bug found in do_not_honour.
+
+    A TERMINAL profile that still lists money-moving actions is three layers
+    disagreeing with each other, and the disagreement resolves silently.
+    """
+    from recoup.domain import ActionKind, Recoverability
+    from recoup.taxonomy import PROFILES
+
+    for fc, p in PROFILES.items():
+        if p.recoverability is not Recoverability.TERMINAL:
+            continue
+        assert p.preferred_actions == (ActionKind.STOP,), (
+            f"{fc.value} is TERMINAL but offers {[a.value for a in p.preferred_actions]}"
+        )
+        assert p.max_attempts == 0, f"{fc.value} is TERMINAL but allows attempts"
+        assert not p.silent_retry_ok
