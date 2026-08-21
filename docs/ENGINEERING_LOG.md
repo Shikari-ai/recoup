@@ -521,11 +521,31 @@ The regression test now asserts the *behaviour* across the seam: given a novel
 code, the bare policy classifies `unknown` and the wired policy classifies
 `issuer_down`, with `llm:` provenance in the rationale.
 
+**And then I found it again.** Having fixed the policy, I posted a novel error
+code at the live webhook endpoint to watch triage work. It came back
+`unknown | via unmapped`. `api/app.py` built its own `RecoveryPolicy` for the
+webhook and had never been updated — the identical gap, one layer over, three
+commits after I had written up the first one.
+
+The second fix is the one that will hold: a test that parses the call sites.
+
+```python
+for node in ast.walk(tree):
+    if name == "RecoveryPolicy" and not any(kw.arg == "classifier" ...):
+        unwired.append(node.lineno)
+```
+
+It asserts the *wire* across `api/app.py`, `cli.py` and `eval/backtest.py`,
+rather than trusting that I remembered. Paired with a behavioural test that a
+novel code resolves to `issuer_down` with `llm:` provenance, so the wire being
+present and the wire doing something are checked separately.
+
 **Lesson.** *Integration is not implied by having both pieces.* I had a correct
 component and a correct consumer and no wire between them, and every unit test
-was green because each half worked. The test that would have caught this asserts
-an end-to-end behaviour change, not a component output — and it is the kind of
-test I write least often, because both halves already look done.
+was green because each half worked. Worse: knowing about the bug did not stop me
+shipping it a second time in a different file, because I fixed the instance
+rather than the class. The durable fix for "did I remember to wire this
+everywhere" is never memory — it is a test that enumerates the call sites.
 
 ---
 

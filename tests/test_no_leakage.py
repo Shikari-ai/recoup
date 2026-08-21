@@ -157,3 +157,64 @@ def test_model_fit_is_deterministic():
     m1 = LogisticModel(seed=3).fit(X, y)
     m2 = LogisticModel(seed=3).fit(X, y)
     assert m1.weights == m2.weights, "identical seed produced different weights"
+
+
+# ---------------------------------------------------------------------------
+# Integration: a component that exists is not a component that is wired
+# ---------------------------------------------------------------------------
+
+#: Modules whose RecoveryPolicy instances face real traffic or produce reported
+#: results. Unit tests construct bare policies deliberately, so they are exempt.
+PRODUCTION_SITES = ["api/app.py", "cli.py", "eval/backtest.py"]
+
+
+@pytest.mark.parametrize("module", PRODUCTION_SITES)
+def test_every_production_policy_gets_a_classifier(module):
+    """Every policy that faces real traffic must classify with triage behind it.
+
+    Regression test, for a bug found twice. `TriageService` was written,
+    documented, measured and quoted in the README while `RecoveryPolicy` called
+    the bare `classify()` -- so the agent never used it. Fixing that in the
+    backtest left the *same* gap in the live webhook endpoint, which kept
+    classifying novel error codes as UNKNOWN.
+
+    Both times every unit test passed, because each half worked in isolation.
+    This asserts the wire, by parsing the call sites rather than trusting them.
+    """
+    tree = ast.parse((PKG / module).read_text(encoding="utf-8"), filename=module)
+    unwired = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+        if name != "RecoveryPolicy":
+            continue
+        if not any(kw.arg == "classifier" for kw in node.keywords):
+            unwired.append(node.lineno)
+
+    assert not unwired, (
+        f"{module} constructs RecoveryPolicy without a classifier at line(s) "
+        f"{unwired}; novel error codes will silently classify as UNKNOWN"
+    )
+
+
+def test_default_classifier_actually_resolves_a_novel_code():
+    """Guards the other half: the wire is useless if triage does nothing."""
+    from recoup.policy import default_classifier
+
+    from recoup.domain import Channel, CustomerContext, Rail, RiskEvent, RiskKind
+
+    c = default_classifier()
+    ev = RiskEvent(
+        event_id="e", merchant_id="m", kind=RiskKind.PAYMENT_FAILED,
+        amount_paise=100_000, rail=Rail.UPI_COLLECT,
+        occurred_at=__import__("datetime").datetime(
+            2026, 6, 1, tzinfo=__import__("datetime").timezone.utc),
+        customer=CustomerContext("c", contactable=(Channel.SMS,)),
+        error_code="NPCI_XC_09",
+        error_description="Beneficiary PSP unreachable, retry advised",
+    )
+    cls = c(ev)
+    assert cls.failure_class.value == "issuer_down"
+    assert cls.provenance.startswith("llm:")

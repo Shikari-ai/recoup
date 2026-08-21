@@ -53,19 +53,21 @@ def cmd_demo(args: argparse.Namespace) -> int:
     from .eval.backtest import _fresh, _warm_health
     from .eval.runner import run
     from .ledger import AuditLedger, explain_event
-    from .policy import RecoveryPolicy
+    from .policy import RecoveryPolicy, default_classifier
     from .propensity import LogisticModel
     from .sim.generator import ScenarioConfig, generate
 
     pack = load_pack(args.policy)
     cfg = ScenarioConfig(n_events=args.events, days=20, seed=args.seed)
     events, world, truth = generate(cfg)
+    classifier = default_classifier()
 
     # Train briefly so the probabilities mean something.
     store, health, guards = _fresh(pack)
     _warm_health(health, events, world, events[-1].occurred_at)
     warm = run(
-        RecoveryPolicy(pack, LogisticModel(), health, store, guards, explore=0.9, seed=cfg.seed),
+        RecoveryPolicy(pack, LogisticModel(), health, store, guards, explore=0.9,
+                       seed=cfg.seed, classifier=classifier),
         events, world, truth, pack, store=store, health=health, collect_training=True,
     )
     model = LogisticModel(seed=cfg.seed).fit(
@@ -75,7 +77,8 @@ def cmd_demo(args: argparse.Namespace) -> int:
     store, health, guards = _fresh(pack)
     _warm_health(health, events, world, events[0].occurred_at)
     ledger = AuditLedger()
-    policy = RecoveryPolicy(pack, model, health, store, guards, seed=cfg.seed)
+    policy = RecoveryPolicy(pack, model, health, store, guards, seed=cfg.seed,
+                            classifier=classifier)
 
     shown: list[str] = []
     interesting = {"insufficient_funds", "card_expired", "mandate_revoked", "issuer_down"}

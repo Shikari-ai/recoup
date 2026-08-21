@@ -36,7 +36,7 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
     from ..eval.backtest import _fresh, _warm_health, backtest
     from ..eval.report import ARM_NOTES
     from ..ingest import WebhookError, from_webhook_bytes
-    from ..policy import RecoveryPolicy
+    from ..policy import RecoveryPolicy, default_classifier
     from ..sim.generator import ScenarioConfig, generate
 
     pack = load_pack()
@@ -57,7 +57,14 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
         evs, world, truth = generate(cfg)
         store, health, guards = _fresh(pack)
         _warm_health(health, evs, world, evs[-1].occurred_at)
-        state["live"] = RecoveryPolicy(pack, result.model, health, store, guards, seed=seed)
+        # Same classifier the backtest uses: lookup table first, LLM triage for
+        # the unmapped tail. Without it this endpoint silently treats every
+        # novel error code as UNKNOWN, which is precisely the gap described in
+        # docs/ENGINEERING_LOG.md 11 -- found once in the policy, and again here.
+        state["live"] = RecoveryPolicy(
+            pack, result.model, health, store, guards, seed=seed,
+            classifier=default_classifier(),
+        )
         state["store"] = store
         state["health"] = health
 

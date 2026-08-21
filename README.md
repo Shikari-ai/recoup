@@ -77,8 +77,14 @@ at random** among permitted actions and ignores the expected-value floor. It is
 the "spend the whole budget, exercise no judgment" control.
 
 **recoup beats it by +49.6%, while taking 14% fewer actions and 48% fewer
-messages.** Spending the budget at random *loses* to the rulebook.
-The lift is judgment, with volume held constant.
+messages.** The lift is judgment, with volume held constant.
+
+Across five scenarios, spending the budget at random comes out **median −19.3%
+against the rulebook** (min −25.1%, max +3.3%, ahead on only 2 of 5), while
+recoup beats it by +24.6% to +71.5%. So a policy willing to keep acting where
+the rulebook stops does not thereby do better — usually it does worse, because
+untargeted effort spends the attempt budget on receivables that were never
+coming back.
 
 `scripts/ablation.py` takes the last step and switches the model off, keeping
 the whole architecture:
@@ -89,6 +95,10 @@ exhaustive_random    Rs 77,45,273     3,573 actions   2,040 msgs    +3.3%
 ev_untrained         Rs 65,07,467     3,204 actions   1,622 msgs   -13.2%
 recoup               Rs 1,02,68,347   3,117 actions   1,026 msgs   +37.0%
 ```
+
+(Seed 42 is one of the two scenarios in five where random-with-full-budget
+happens to edge the rulebook. Its median across seeds is −19.3%, so this row
+flatters it. The conclusion below does not depend on which way that row falls.)
 
 Read the third row carefully. **The architecture without a working model is
 worse than acting at random.** With `P(recover)` held constant, expected value

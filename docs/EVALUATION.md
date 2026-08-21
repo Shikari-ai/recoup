@@ -301,8 +301,14 @@ recoup               Rs 1,75,29,657   4,553 actions   1,543 msgs   +57.0% vs ran
 ```
 
 **recoup beats it by +49.6% while taking 14% fewer actions and 48% fewer
-messages.** Spending the budget at random *loses* to the rulebook.
-The lift is judgment, with volume held constant.
+messages.** The lift is judgment, with volume held constant.
+
+Measured across five scenarios rather than one, spending the budget at random
+runs **median −19.3% against the rulebook** (min −25.1%, max +3.3%, ahead on
+2 of 5), while recoup beats it by +24.6% to +71.5%. Untargeted effort is not
+merely less effective than judgment; it is usually worse than stopping early,
+because it spends a capped attempt budget on receivables that were never coming
+back.
 
 ### Which layer is doing the work?
 
