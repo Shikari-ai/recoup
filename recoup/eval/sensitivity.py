@@ -135,6 +135,34 @@ def build_scenarios(base: WorldParams | None = None) -> list[Scenario]:
         )
     )
 
+    # -- worlds designed to break this agent -------------------------------
+    #    Added after a first grid returned 19/19 wins, which is a warning sign
+    #    rather than a result: it means the grid was not searching where the
+    #    agent is weak. These remove the *information* an EV policy needs,
+    #    rather than merely changing the numbers it acts on.
+    s.append(
+        Scenario(
+            "no_class_signal",
+            replace(b, class_flattening=1.0),
+            "every failure class behaves identically -- taxonomy is worthless",
+        )
+    )
+    s.append(
+        Scenario(
+            "no_action_signal",
+            replace(b, action_flattening=1.0),
+            "every action works equally well -- nothing left to rank",
+        )
+    )
+    s.append(
+        Scenario(
+            "pure_noise",
+            replace(b, class_flattening=1.0, action_flattening=1.0,
+                    cust_alpha=1.0, cust_beta=1.0),
+            "class, action AND payer all uninformative -- recovery is a coin flip",
+        )
+    )
+
     # -- cost pressure -----------------------------------------------------
     def expensive_comms(p: PolicyPack) -> PolicyPack:
         costs = dict(p.action_cost_paise)
@@ -147,6 +175,19 @@ def build_scenarios(base: WorldParams | None = None) -> list[Scenario]:
     s.append(
         Scenario("comms_8x_cost", b, "messaging costs 8x, escalation 3x",
                  pack_mutator=expensive_comms)
+    )
+
+    def ruinous_comms(p: PolicyPack) -> PolicyPack:
+        costs = dict(p.action_cost_paise)
+        for k in list(costs):
+            if k.startswith("send_") or k.startswith("request_"):
+                costs[k] = costs[k] * 60
+        costs["escalate_human"] = costs.get("escalate_human", 5000) * 20
+        return replace(p, action_cost_paise=costs)
+
+    s.append(
+        Scenario("comms_60x_cost", b, "messaging costs 60x -- any over-action is ruinous",
+                 pack_mutator=ruinous_comms)
     )
     return s
 

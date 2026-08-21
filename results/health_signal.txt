@@ -1,0 +1,15 @@
+Per-issuer outage detection vs merchant volume
+(inference from observed failure density only -- no ground truth)
+
+ failures/day  per pair/day  in-window   detected  false pos
+------------------------------------------------------------
+          133          0.76          0      0/40       1/40 
+          444          2.42          0      0/40       4/39 
+        1,333          7.16          0      1/40      17/40 
+------------------------------------------------------------
+
+'in-window' is the median number of observed failures falling inside a
+real outage, for the affected issuer and rail. The monitor needs 8
+samples in its 45-minute window before it will call a degradation, so
+below roughly that density there is simply nothing to detect -- no
+algorithm recovers a signal that was never sampled.

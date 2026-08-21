@@ -102,7 +102,56 @@ def normalise(cmd: str) -> str:
     return cmd
 
 
+def check_distinct_docs() -> list[str]:
+    """Fail if two documents are near-duplicates of each other.
+
+    Added after `docs/EVALUATION.md` was silently overwritten with a copy of the
+    README by a patch script that reused a path variable. Nothing errored, every
+    test passed, and the file read plausibly -- it was simply the wrong content
+    under the right filename, which is close to undetectable by eye once both
+    files are long.
+    """
+    problems = []
+    docs = {d: set(d.read_text(encoding="utf-8").split()) for d in DOCS}
+    names = list(docs)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            wa, wb = docs[a], docs[b]
+            if not wa or not wb:
+                continue
+            overlap = len(wa & wb) / min(len(wa), len(wb))
+            if overlap > 0.75:
+                problems.append(
+                    f"{a.name} and {b.name} share {overlap:.0%} of their vocabulary "
+                    f"-- one may have been overwritten with the other"
+                )
+    return problems
+
+
+def check_headings() -> list[str]:
+    """Every doc must lead with its own distinct H1."""
+    seen: dict[str, str] = {}
+    problems = []
+    for d in DOCS:
+        for line in d.read_text(encoding="utf-8").splitlines():
+            if line.startswith("# "):
+                title = line[2:].strip()
+                if title in seen and seen[title] != d.name:
+                    problems.append(
+                        f"{d.name} and {seen[title]} both titled '{title}'"
+                    )
+                seen.setdefault(title, d.name)
+                break
+    return problems
+
+
 def main() -> int:
+    structural = check_distinct_docs() + check_headings()
+    for msg in structural:
+        print(f"  DOC   {msg}")
+    if not structural:
+        print("  ok    documents are distinct from one another")
+
     seen: set[str] = set()
     ran = skipped = failed = 0
     problems: list[tuple[str, str, str]] = []
@@ -155,7 +204,7 @@ def main() -> int:
     print(f"\n{ran} executed, {skipped} skipped, {failed} failed")
     for doc, cmd, err in problems:
         print(f"\n--- {doc}: {cmd}\n{err}")
-    return 1 if failed else 0
+    return 1 if (failed or structural) else 0
 
 
 if __name__ == "__main__":

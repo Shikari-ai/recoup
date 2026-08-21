@@ -185,6 +185,13 @@ class ScenarioConfig:
     n_customers: int = 1800
     novel_code_rate: float = 0.03
     dnd_rate: float = 0.12
+    #: How concentrated traffic is across issuers. Real Indian payment volume is
+    #: heavily skewed -- a handful of banks carry most of it -- and issuer
+    #: concentration is what decides whether per-issuer outage detection has any
+    #: signal at all. 0.0 draws issuers uniformly (unrealistic, and leaves ~1.4
+    #: observed failures per issuer/rail per day, far too sparse to detect an
+    #: outage); higher values follow a power law. See docs/EVALUATION.md.
+    issuer_concentration: float = 1.1
     start: datetime | None = None
     #: Perturbed latent-world constants. Used by eval/sensitivity.py to re-run
     #: the whole comparison under different assumptions about how payments
@@ -257,6 +264,12 @@ def generate(config: ScenarioConfig, world: World | None = None) -> tuple[list[R
         for i in range(config.n_customers)
     ]
 
+    # Power-law issuer share: rank i gets weight 1/(i+1)**concentration.
+    issuer_weights = {
+        name: 1.0 / (i + 1) ** config.issuer_concentration
+        for i, name in enumerate(ISSUERS)
+    }
+
     events: list[RiskEvent] = []
     truth: dict[str, FailureClass] = {}
 
@@ -293,7 +306,7 @@ def generate(config: ScenarioConfig, world: World | None = None) -> tuple[list[R
         amount_paise = amount * 100
 
         occurred = start + timedelta(minutes=rng.uniform(0, config.days * 24 * 60))
-        issuer = rng.choice(ISSUERS)
+        issuer = _weighted(rng, issuer_weights)  # type: ignore[assignment]
 
         # Bias reality toward coherence: if the issuer really is down at this
         # moment, an ISSUER_DOWN classification is far more likely. Without

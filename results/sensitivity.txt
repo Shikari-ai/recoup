@@ -1,44 +1,6 @@
-sensitivity: 19 worlds x 4,000 events, seed 42
+sensitivity: 23 worlds x 4,000 events, seed 42
 
 world                          recoup     rule_based   vs rule  vs fixed    AUC  viol
 -------------------------------------------------------------------------------------
-baseline              Rs 1,33,05,908.00Rs 1,13,02,740.00    17.7%     236.9%  0.769     0
-salary_weak           Rs 1,22,37,139.00Rs 1,09,44,933.00    11.8%     215.2%  0.761     0
-salary_strong         Rs 1,27,97,490.00Rs 1,13,60,339.00    12.7%     222.9%  0.784     0
-decay_fast            Rs 1,27,93,325.00Rs 1,04,23,992.00    22.7%     250.2%  0.752     0
-decay_slow            Rs 1,32,37,445.00Rs 1,14,89,180.00    15.2%     182.5%  0.781     0
-fatigue_high          Rs 1,29,89,935.00Rs 1,12,97,475.00    15.0%     228.9%  0.783     0
-fatigue_low           Rs 1,12,83,834.00Rs 1,13,11,941.00    -0.2%*    185.7%  0.751     0
-escalate_decay_fast   Rs 1,19,36,032.00Rs 99,86,304.00    19.5%     202.2%  0.780     0
-escalate_decay_slow   Rs 1,45,46,076.00Rs 1,41,94,426.00     2.5%     268.3%  0.767     0
-outages_rare          Rs 1,41,25,131.00Rs 1,11,21,736.00    27.0%     235.2%  0.778     0
-outages_frequent      Rs 1,30,49,471.00Rs 99,08,550.00    31.7%     189.4%  0.769     0
-outage_mild           Rs 1,33,06,598.00Rs 1,13,02,740.00    17.7%     236.9%  0.769     0
-stale_fast            Rs 1,06,26,366.00Rs 1,10,60,003.00    -3.9%*    179.3%  0.774     0
-stale_slow            Rs 1,26,37,229.00Rs 1,14,24,816.00    10.6%     210.2%  0.777     0
-friction_high         Rs 1,00,97,064.00Rs 80,40,840.00    25.6%     187.5%  0.770     0
-payers_flaky          Rs 80,67,909.00Rs 89,67,584.00   -10.0%*    132.5%  0.742     0
-payers_reliable       Rs 1,34,54,600.00Rs 1,16,30,793.00    15.7%     235.6%  0.776     0
-advantage_stripped    Rs 1,79,60,815.00Rs 1,35,62,702.00    32.4%     326.8%  0.736     0
-comms_8x_cost         Rs 1,28,83,887.00Rs 1,13,02,740.00    14.0%     226.2%  0.765     0
--------------------------------------------------------------------------------------
-
-worlds tested            19
-agent beats rulebook in  16/19
-lift vs rulebook         median +15.2%   min -10.0%   max +32.4%
-lift vs fixed retry      median +222.9%
-guardrail violations     0  (across every world)
-
-worlds where the agent does NOT win, and why:
-   -10.0%  payers_flaky           most payers are unreliable
-    -3.9%  stale_fast             receivables go cold quickly
-    -0.2%  fatigue_low            messages keep converting
-
-These are reported, not hidden. A policy that won in every conceivable
-world would be evidence of a rigged simulator rather than a good agent.
-
-assumptions the result is most sensitive to:
-  payers_flaky           lift -10.0%  (moves the result by 27.8%)
-  stale_fast             lift -3.9%  (moves the result by 21.6%)
-  fatigue_low            lift -0.2%  (moves the result by 18.0%)
-  escalate_decay_slow    lift +2.5%  (moves the result by 15.2%)
+baseline              Rs 1,02,89,329.00Rs 74,61,054.00    37.9%     208.1%  0.773     0
+salary_weak           Rs 1,06,13,811.00Rs 73,29,579.00    44.8%     242.0%  0.756     0

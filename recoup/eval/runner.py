@@ -84,6 +84,12 @@ class RunResult:
     #: policy is planning actions that go stale, which is worth knowing.
     late_blocks: int = 0
     #: Actions that executed despite a failing guardrail. MUST be zero.
+    #:
+    #: Populated by ``audit_executed_actions()`` -- an *independent* replay of
+    #: every executed action through a fresh guardrail engine, rebuilt from the
+    #: recorded action log. It deliberately does not trust the runner's own
+    #: inline check: a field that only the enforcing code can write to is not
+    #: evidence, it is an assertion about itself.
     violations: list[str] = field(default_factory=list)
     by_class: dict[str, dict[str, int]] = field(default_factory=dict)
     by_action: dict[str, int] = field(default_factory=dict)
@@ -383,7 +389,58 @@ def run(
 
     if ledger is not None:
         result.ledger_head = ledger.head()
+
+    # Independent compliance audit. Every executed action is re-checked against
+    # freshly rebuilt guardrail state, so the reported violation count comes
+    # from a different code path than the one that enforced the rules.
+    result.violations = audit_executed_actions(events, store, pack)
     return result
+
+
+def audit_executed_actions(
+    events: list[RiskEvent], store: RecoveryStore, pack: PolicyPack
+) -> list[str]:
+    """Replay every executed action through fresh gates. Returns violations.
+
+    This is the independent check behind the "zero violations" claim. It
+    reconstructs guardrail state from the recorded action log and re-evaluates
+    each action at the moment it executed, using a *separate* store and engine
+    from the ones the runner used.
+
+    Why not simply trust the runner? Because the runner both enforces the gates
+    and reports on them, and a component that grades its own homework proves
+    nothing. If the inline check has a bug, this replay is what catches it.
+    """
+    from ..taxonomy import classify
+
+    replay = RecoveryStore()
+    guards = GuardrailEngine(pack, replay)
+    by_id = {e.event_id: e for e in events}
+    violations: list[str] = []
+
+    # store.entries is in execution order, which the event loop guarantees is
+    # non-decreasing in time -- required for the replay to see the same history
+    # each action actually faced.
+    for entry in store.entries:
+        ev = by_id.get(entry.event_id)
+        if ev is None:
+            violations.append(f"{entry.event_id}: action recorded for an unknown event")
+            continue
+        cls = classify(ev.error_code, ev.error_description, risk_kind=ev.kind.value)
+        action = Action(
+            entry.action_kind, entry.executed_at, rail=entry.rail, channel=entry.channel
+        )
+        replay.mark_seen(ev.event_id, ev.occurred_at)
+        for v in guards.check(ev, cls, action, entry.executed_at):
+            if not v.allowed:
+                violations.append(
+                    f"{ev.event_id} {entry.action_kind.value} @ "
+                    f"{entry.executed_at.isoformat()}: {v.rule}: {v.reason}"
+                )
+        replay.record(entry)
+        if entry.is_comms and ev.rail in MANDATE_RAILS:
+            replay.mark_notice_sent(ev.event_id, entry.executed_at)
+    return violations
 
 
 def format_result(r: RunResult) -> str:

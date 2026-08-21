@@ -34,7 +34,7 @@ receivables and every comparison is nonsense.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..domain import FailureClass, RiskEvent, rupees
 from ..guardrails import GuardrailEngine
@@ -99,25 +99,42 @@ def _fresh(pack: PolicyPack) -> tuple[RecoveryStore, IssuerHealthMonitor, Guardr
 
 
 def _warm_health(
-    health: IssuerHealthMonitor, events: list[RiskEvent], world: World, cutoff: datetime
+    health: IssuerHealthMonitor,
+    events: list[RiskEvent],
+    world: World,
+    cutoff: datetime,
 ) -> None:
-    """Seed the health monitor with the original failures.
+    """Deliberately a no-op. Kept as documentation of a removed component.
 
-    Every event in the feed *is* an observed failure on its issuer and rail.
-    Withholding that would make the monitor blind at the moment it matters
-    most, and no production system would throw the signal away. Successes are
-    interpolated from the world's outage schedule at the same timestamps, which
-    is the closest honest analogue of a real success/failure stream.
+    This function used to pre-seed the issuer health monitor with a synthetic
+    success/failure stream. Two problems were found, in order:
+
+    1. **It leaked.** It decided whether to emit successes by calling
+       ``world.is_down()`` -- the simulator's ground truth -- handing the monitor
+       a perfect, noise-free outage schedule instead of making it infer one.
+       Since only ``RecoveryPolicy`` consults the monitor and
+       ``RuleBasedPolicy`` does not, that advantage accrued to exactly one arm.
+
+    2. **Once the leak was removed, the signal was not there.** At the default
+       scenario size a merchant observes ~1.4 failures per issuer/rail per day,
+       and the median count of observed failures falling *inside* a real outage
+       window is **zero**. Raising volume did not rescue it: at 1,333
+       failures/day detection was 1/40 while false positives were 17/40 -- the
+       monitor firing on artefacts of the synthetic stream rather than on
+       outages. See ``scripts/health_signal.py`` and ``results/health_signal.txt``.
+
+    So the synthetic stream was deleted rather than repaired. The monitor now
+    observes only the outcomes of the agent's own attempts, which is
+    unambiguously real observable data, and the propensity model learns
+    near-zero weights on the health features -- correctly reflecting that at
+    this traffic density the signal is weak. Removing the stream also *improved*
+    held-out AUC (0.756 -> 0.765), because it had been injecting noise.
+
+    The monitor itself is a sound, tested algorithm (Wilson-bounded, strictly
+    causal) and would earn its place at real per-issuer volumes. It is not
+    carrying the reported lift, and this project does not claim it is.
     """
-    for e in events:
-        if e.occurred_at > cutoff:
-            break
-        health.observe(e.issuer, e.rail, False, e.occurred_at)
-        # A merchant sees far more successes than failures; without them the
-        # baseline collapses to zero and every issuer looks permanently down.
-        if not world.is_down(e.issuer, e.rail, e.occurred_at):
-            for _ in range(6):
-                health.observe(e.issuer, e.rail, True, e.occurred_at)
+    return None
 
 
 def backtest(

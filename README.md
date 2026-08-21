@@ -41,7 +41,7 @@ produces answers a cron cannot reach:
 |---|---|---|---|
 | Card expired | Retries 3× | Switches rail | Every same-rail retry is a *guaranteed* decline that still burns a card-scheme attempt |
 | Insufficient funds | Retries at +24h | Retries in the **1st–7th** | Indian salary credits land at month start; balances are highest then |
-| HDFC UPI degraded | Retries at +24h | Retries in **minutes** | The payer was never the problem. Wait for the bank, not the clock |
+| Bank-side outage | Retries at +24h | Retries in **~30 min** | The payer was never the problem, so the cool-off is minutes, not a day |
 | Rs 60 abandoned cart | Nothing | **Nothing** | Rs 0.85 × WhatsApp against 4% of Rs 60 isn't worth a customer's attention |
 | Mandate revoked | Retries 3× | **Stops, permanently** | Debiting a withdrawn authorisation is an unauthorised debit |
 
@@ -54,22 +54,21 @@ Held-out backtest, 6,000 at-risk receivables over 45 days, seed 42:
 | Arm | Attributed recovery | Actions | Violations |
 |---|---:|---:|---:|
 | `no_action` (control) | Rs 0 | 0 | 0 |
-| `fixed_retry` (24h × 3) | Rs 48,99,078 | 2,854 | 0 |
-| `rule_based` (**strong** rulebook) | Rs 1,49,88,639 | 3,048 | 0 |
-| **`recoup`** | **Rs 1,87,30,144** | 4,453 | **0** |
+| `fixed_retry` (24h × 3) | Rs 45,51,524 | 3,036 | 0 |
+| `rule_based` (**strong** rulebook) | Rs 1,33,66,199 | 2,961 | 0 |
+| **`recoup`** | **Rs 1,75,29,657** | 4,553 | **0** |
 
-**+25.0% over the strong rulebook · +282.3% over fixed retry · AUC 0.772 ·
-ECE 0.015 · zero guardrail violations** — and it does it in *fewer* actions per
-recovery than the rulebook (4.33 vs 4.57).
+**+31.1% over the strong rulebook · +285.1% over fixed retry · AUC 0.765 ·
+ECE 0.011 · zero guardrail violations.**
 
 One seed is an anecdote, so `scripts/stability.py` re-runs the entire pipeline
 across 8 independent scenarios of 4,000 receivables each:
 
 ```
-lift vs rule_based    median +29.1%   mean +25.8%   min -3.3%   max +51.0%
-lift vs fixed_retry   median +298.5%  mean +278.2%  min +179.7% max +361.9%
-pooled (all seeds)    +24.3%          wins 7/8 seeds
-AUC median 0.765      ECE median 0.016
+lift vs rule_based    median +29.9%   mean +28.3%   min +3.2%   max +54.7%
+lift vs fixed_retry   median +274.1%  mean +288.7%  min +192.8% max +445.9%
+pooled (all seeds)    +26.4%          wins 8/8 seeds
+AUC median 0.771      ECE median 0.015
 guardrail violations across every seed and arm: 0
 ```
 
@@ -119,6 +118,59 @@ In a world where salary timing does nothing, that rule makes it wait weeks for
 no benefit while receivables go stale and hit deadlines. The learned policy
 notices the effect is gone and retries sooner. A hardcoded heuristic cannot tell
 when its own premise has expired; an EV calculation can.
+
+### The classifier is measured by consequence, not by accuracy
+
+Taxonomy accuracy is **96.9%** on held-out events (macro-F1 0.952), and that
+number is nearly useless alone — the classes are imbalanced and their errors are
+asymmetric. So `recoup backtest` splits every misclassification by what it would
+actually cause:
+
+```
+  errors by consequence, not by count:
+    dangerous          0   terminal failure read as actionable
+    over-cautious      0   actionable failure read as terminal
+    benign            75   wrong class, same recovery strategy
+
+  TERMINAL RECALL  1.0000   (33 terminal failures in the slice)
+```
+
+`insufficient_funds` read as `gateway_error` costs a wasted attempt.
+`mandate_revoked` read as `insufficient_funds` is an **unauthorised debit**.
+Accuracy counts those identically. **Terminal recall** is the number that
+matters, and every confusion the classifier does make lands in `unknown` —
+which fails closed to one attempt and no silent retry.
+
+### A component I built, measured, and turned off
+
+The most useful thing this project produced is a negative result, and it is in
+the README rather than a footnote because burying it would be the dishonest
+choice.
+
+Recoup has an issuer health monitor — Wilson-bounded, strictly causal, meant to
+spot a bank outage and re-present in minutes. **It contributes nothing, and an
+earlier version only looked like it worked because it was reading the
+simulator's ground truth.** The seeding helper called `world.is_down()` to
+decide when to emit successful payments, handing the detector a perfect outage
+schedule; and since only the learned policy consults it, the advantage went to
+exactly one arm. Removing that leak cost ~6 points of lift.
+
+With the leak gone it detected **0 of 60** real outages. The arithmetic says why:
+~1.4 observed failures per issuer/rail per day, and the median failure count
+*inside* a real outage window is **zero**. The detector needs 8 samples in 45
+minutes. There was never a signal. More volume made it worse — at 1,333
+failures/day it flagged 17 healthy issuers and 1 real outage.
+
+So I deleted the synthetic data feeding it. The monitor now sees only the
+agent's own attempt outcomes, held-out AUC *improved* (0.756 → 0.765) because
+the synthetic stream had been injecting noise, and the model independently
+learned weights of ±0.05 on the health features — working out for itself that
+the signal was worthless.
+
+**None of the lift above is attributable to issuer awareness.** The component
+stays because the algorithm is correct and would earn its place at real
+per-issuer volumes; the claim does not.
+[ENGINEERING_LOG.md §9](docs/ENGINEERING_LOG.md) has the full account.
 
 ### And it knows when *not* to be used
 
@@ -231,9 +283,9 @@ data, you can run the same batch under a conservative risk posture
 messages a week, no DND carve-out):
 
 ```
-in_default   Rs 1,26,74,966   2,852 actions   901 messages   0 violations
-in_strict    Rs 1,05,11,923   1,370 actions   251 messages   0 violations
-                                    cost of strict: Rs 21,63,043  (17.1%)
+in_default   Rs 1,02,89,329   3,024 actions   985 messages   0 violations
+in_strict      Rs 86,38,288   1,369 actions   212 messages   0 violations
+                                    cost of strict: Rs 16,51,041  (16.0%)
 ```
 
 That's a number a risk team and a revenue team can actually argue about, which
@@ -245,7 +297,7 @@ verification at that exact sequence number.
 
 ```bash
 python -m recoup backtest --ledger artifacts/audit.jsonl
-python -m recoup verify   artifacts/audit.jsonl   # OK  12379 records, chain intact
+python -m recoup verify   artifacts/audit.jsonl   # OK  12916 records, chain intact
 python -m recoup audit    artifacts/audit.jsonl evt_001081
 ```
 

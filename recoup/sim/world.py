@@ -134,6 +134,14 @@ class WorldParams:
     staleness_per_day: float = 0.955
     #: Larger amounts are harder to recover on the spot.
     amount_friction: float = 0.055
+    #: Blend every failure class toward the global mean, in [0, 1]. At 1.0 all
+    #: classes behave identically, so knowing the failure class tells you
+    #: nothing and the taxonomy provides no edge.
+    class_flattening: float = 0.0
+    #: Blend every action family toward the same effectiveness, in [0, 1]. At
+    #: 1.0 it does not matter what you do, only that you do something, so
+    #: expected-value ranking has nothing left to rank.
+    action_flattening: float = 0.0
     #: Mean outages per issuer/rail per simulated week.
     outages_per_week: float = 1.6
     outage_min_minutes: int = 12
@@ -156,6 +164,7 @@ class World:
         self._rng = random.Random(seed)
         self.start = start or datetime(2026, 6, 1, tzinfo=timezone.utc)
         self.days = days
+        self._global_mean: float | None = None
         self._cust_quality: dict[str, float] = {}
         self._cust_responsive: dict[str, float] = {}
         self._outages: list[Outage] = []
@@ -229,6 +238,14 @@ class World:
         The agent's job is to approximate this from observed outcomes alone.
         """
         table = BASE.get(failure_class, BASE[FailureClass.UNKNOWN])
+
+        # Flattening knobs, used by eval/sensitivity.py to build worlds where
+        # this agent's advantages cannot exist. If knowing the failure class or
+        # choosing the action carries no information, an EV-ranking policy has
+        # nothing to be right about and a rulebook should do at least as well.
+        if self.p.class_flattening > 0.0 or self.p.action_flattening > 0.0:
+            table = self._flatten(table)
+
         t = action.execute_at
         target_rail = action.rail or event.rail
 
@@ -299,6 +316,28 @@ class World:
         p *= math.exp(-self.p.amount_friction * math.log1p(rupee / 1000.0))
 
         return max(0.0, min(0.97, p))
+
+    def _flatten(self, table: dict[str, float]) -> dict[str, float]:
+        """Blend a class's action profile toward uniformity.
+
+        ``class_flattening`` pulls every class toward the same overall level;
+        ``action_flattening`` pulls every action within a class toward the same
+        effectiveness. Together at 1.0 they describe a world where recovery is
+        a coin flip that no amount of judgement improves.
+        """
+        if self._global_mean is None:
+            vals = [v for tbl in BASE.values() for v in tbl.values()]
+            self._global_mean = sum(vals) / len(vals)
+
+        out = dict(table)
+        if self.p.action_flattening > 0.0:
+            local = sum(out.values()) / max(1, len(out))
+            a = self.p.action_flattening
+            out = {k: (1 - a) * v + a * local for k, v in out.items()}
+        if self.p.class_flattening > 0.0:
+            c = self.p.class_flattening
+            out = {k: (1 - c) * v + c * self._global_mean for k, v in out.items()}
+        return out
 
     def resolve(
         self,

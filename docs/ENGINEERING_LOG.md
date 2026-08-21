@@ -302,6 +302,85 @@ command in a README is a claim, and claims should be executed.
 
 ---
 
+## 9. My issuer health monitor was reading the answer key
+
+The one I am least happy about, and the one that changed the most.
+
+**Symptom.** None. Everything passed. I found it by re-reading a helper I had
+written early and never questioned.
+
+`_warm_health()` seeded the issuer health monitor before each run. To decide
+whether to emit a successful payment at a given moment, it called:
+
+```python
+if not world.is_down(e.issuer, e.rail, e.occurred_at):
+    for _ in range(6):
+        health.observe(e.issuer, e.rail, True, e.occurred_at)
+```
+
+`world.is_down()` is **the simulator's ground truth**. I had handed the monitor a
+perfect, noise-free outage schedule and then congratulated it for detecting
+outages. Worse, it was one-sided: only `RecoveryPolicy` consults the monitor —
+`RuleBasedPolicy` never touches it — so the entire benefit accrued to the arm I
+was trying to prove was better.
+
+Every claim I had made about "detects the bank is down and re-presents in
+minutes" was, in this backtest, the simulator telling the agent the answer.
+
+**First fix.** Replace the ground-truth check with a steady background success
+rate, so the monitor has to infer outages from failure *density* — which is
+genuinely observable. Result:
+
+```
+outages detected purely from observed failure density: 0/60
+```
+
+Zero. The leak had been doing one hundred percent of the work.
+
+**Why.** The arithmetic is brutal and I should have done it before building the
+component. At the default scenario there are ~1.4 observed failures per
+issuer/rail per day, and the median number of failures falling *inside* a real
+outage window is **0**. The monitor needs 8 samples in a 45-minute window. There
+was never a signal to detect.
+
+**Second attempt: more volume.** I added realistic power-law issuer
+concentration and swept merchant size (`scripts/health_signal.py`):
+
+```
+ failures/day  per pair/day  in-window   detected  false pos
+          133          0.76          0      0/40      1/40
+          444          2.42          0      0/40      4/39
+        1,333          7.16          0      1/40     17/40
+```
+
+It got *worse*. At the highest volume it fired on 17 healthy issuers and 1 real
+outage — detecting artefacts of my own synthetic success stream, not outages.
+
+**What I did.** Deleted the synthetic stream entirely. The monitor now observes
+only the outcomes of the agent's own attempts, which is unambiguously real data.
+Consequences, all reported:
+
+- Lift fell from +25.0% to **+18.8%** on removing the leak alone — about six
+  points of my headline had been the simulator whispering.
+- With the synthetic stream also gone, held-out AUC *improved* (0.756 → 0.765).
+  It had been injecting noise.
+- The propensity model now learns weights of ±0.05 on the health features. It
+  worked out on its own that the signal is not worth much, which is the
+  learning framework doing exactly its job.
+
+**Why I kept the component.** The monitor is a correct, tested, strictly-causal
+Wilson-bounded detector, and at real per-issuer volumes it would earn its place.
+What I removed was the fake data feeding it. `_warm_health` survives as a
+documented no-op, because deleting the function outright would have erased the
+reason it is gone.
+
+**Lesson.** *Ask what the component would look like if it did not work.* I never
+did, so a leak and a dead signal looked identical to success for the whole
+build. The arithmetic that killed it — failures per issuer per day versus the
+detector's window — takes two minutes and should have come before the code.
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`

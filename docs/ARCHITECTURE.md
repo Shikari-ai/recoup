@@ -19,8 +19,9 @@ entire system, and it produces answers a cron cannot reach:
   still burns a card-scheme attempt. The move is a rail switch.
 - an insufficient-funds decline is retried in the **first week of the month**,
   when Indian salary credits land and balances are highest.
-- a payment that failed because HDFC's UPI handle was degraded is re-presented
-  in **minutes**, not a day, because the payer was never the problem.
+- a payment that failed on the bank's side is re-presented after a **~30 minute**
+  cool-off rather than a day, because the payer was never the problem. (This
+  comes from the failure profile, not the issuer health monitor — see below.)
 - a Rs 60 abandoned cart gets **nothing** — an Rs 0.85 WhatsApp message against
   a 4% chance on Rs 60 is worth Rs 1.55, and that is not worth a customer's
   attention.
@@ -122,7 +123,7 @@ all consume real events unchanged — which is the point of the layering.
 |---|---|---|
 | `domain.py` | Types. Money is integer paise; time is aware UTC | — |
 | `taxonomy.py` | Error code → failure class → recovery profile | — |
-| `issuer_health.py` | Rolling per-issuer health, Wilson-bounded outage detection | — |
+| `issuer_health.py` | Rolling per-issuer health, Wilson-bounded outage detection (inert at this volume) | — |
 | `propensity.py` | Features + logistic regression + calibration metrics | — |
 | `policy.py` | Candidate generation, EV ranking, the 3 baselines | — |
 | `guardrails.py` | 19 compliance/safety gates. Absolute veto | — |
@@ -148,6 +149,14 @@ The domain knowledge lives in the feature set, not in if-statements:
 - **Issuer health** — Wilson lower bound on a trailing window against each
   issuer's *own* EWMA baseline. Comparing banks to a global constant produces
   false alarms for weak issuers and misses real outages at strong ones.
+
+  **Measured honestly, this component does nothing here.** At the simulated
+  traffic density there are ~1.4 observed failures per issuer/rail per day and
+  the median failure count inside a real outage window is zero, so there is no
+  signal to detect; the model learns weights of ±0.05 on its features. It is
+  retained because the algorithm is correct and would earn its place at real
+  per-issuer volumes, but none of the reported lift rests on it. See
+  `EVALUATION.md` and `ENGINEERING_LOG.md` §9.
 - **Rail affinity** — a payer with a working UPI handle converts far better on
   it than on a rail they have never touched.
 - **Repetition decay** — `actions_taken`, `comms_taken` and per-family
