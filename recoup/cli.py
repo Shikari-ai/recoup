@@ -20,6 +20,22 @@ from .domain import rupees
 from .policypack import load_pack
 
 
+def _configure_stdout() -> None:
+    """Make stdout able to carry the scripts this system actually generates.
+
+    Recovery messages are drafted in English, Hindi and Hinglish, so the audit
+    trail contains Devanagari. A Windows console defaults to cp1252 and raises
+    UnicodeEncodeError on it, which would crash `recoup audit` on exactly the
+    records a reviewer most wants to read. errors="replace" degrades to
+    placeholder glyphs rather than failing.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):  # not a real tty, or already wrapped
+            pass
+
+
 def _p(msg: str = "") -> None:
     print(msg, flush=True)
 
@@ -408,6 +424,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _configure_stdout()
     args = build_parser().parse_args(argv)
     if not hasattr(args, "policy"):
         args.policy = None

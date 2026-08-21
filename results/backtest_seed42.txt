@@ -71,7 +71,7 @@ policy pack           in_default
 actions executed      15,863 across all arms
 guardrail violations  0
 late blocks (recoup)  546  (planned, then correctly refused at execution time)
-audit ledger          13,941 records, chain intact, head=b6b7d618a19b
+audit ledger          13,941 records, chain intact, head=42a7dea3efb2
 
   Zero violations is the claim being made, and it is checkable: every
   executed action re-ran the full gate set at execution time. See

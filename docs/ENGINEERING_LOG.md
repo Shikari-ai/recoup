@@ -540,6 +540,32 @@ rather than trusting that I remembered. Paired with a behavioural test that a
 novel code resolves to `issuer_down` with `llm:` provenance, so the wire being
 present and the wire doing something are checked separately.
 
+**And a third time.** Checking whether anything else was in the same state, I
+grepped for `MessageComposer`:
+
+```
+$ grep -rn "MessageComposer" recoup/ --include=*.py | grep -v llm/copy.py
+$ grep -rn "message=" recoup/ --include=*.py | grep -v llm/copy.py
+```
+
+Both empty. The message-composition component — the *other* place I argued a
+language model earns its place, with its banned-content validator, its locale
+handling and its template fallback — had never run either. `Action.message`
+carried the comment "populated by the LLM layer for comms actions" and nothing
+had ever populated it.
+
+Three components. Three write-ups. Three wires missing. Now composed at
+execution time (a message is only real once the action survives the second
+guardrail check) with the exact text, source and locale written into the ledger.
+
+Wiring it immediately surfaced a domain bug I would not otherwise have found:
+the Hindi templates were ~90 characters, which looks fine against a 160-character
+SMS limit and is in fact **two segments**. Devanagari is outside GSM-7, so one
+such character re-encodes the whole message as UCS-2 and the limit drops to 70.
+Nothing fails — the message sends, the customer reads it, and the bill is double.
+The validator now computes segments per script and the Hindi templates were
+rewritten to fit.
+
 **Lesson.** *Integration is not implied by having both pieces.* I had a correct
 component and a correct consumer and no wire between them, and every unit test
 was green because each half worked. Worse: knowing about the bug did not stop me

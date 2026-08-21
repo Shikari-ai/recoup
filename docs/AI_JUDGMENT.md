@@ -190,6 +190,26 @@ A message that fails validation is **never sent**; a deterministic template goes
 instead and the violation is recorded. The customer always gets a message. The
 model is what makes it good, not what makes it possible.
 
+**Where it sits.** The composer runs at *execution* time, not decision time —
+a message is only real once the action survives the second guardrail check —
+and the exact text is written into the audit ledger with its source (`llm` or
+`template`) and locale. "What did you say to my customer?" is the first
+question a merchant asks about an automated nudge, and the trail answers it
+verbatim.
+
+(Like triage, this was written and documented before it was wired. `Action.message`
+carried the comment "populated by the LLM layer" for days while nothing populated
+it. See `ENGINEERING_LOG.md` §11 — the same bug, three times, in three components.)
+
+**One detail worth the domain knowledge.** SMS has two length limits, not one.
+GSM-7 fits 160 characters; a single character outside that alphabet re-encodes
+the entire message as UCS-2 and drops the limit to **70**. Devanagari is
+entirely outside GSM-7, so a Hindi nudge that looks comfortably short at 90
+characters is silently two segments at double the cost — nothing fails, the
+message arrives, and the bill is simply wrong. The validator computes segments
+per script, and the Hindi templates are deliberately terser than the English
+ones for exactly this reason.
+
 ---
 
 ## The offline default

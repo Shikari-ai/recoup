@@ -79,6 +79,13 @@ class RunResult:
     comms_sent: int = 0
     total_actions: int = 0
     decisions: int = 0
+    #: Customer messages actually drafted, and where the words came from.
+    #: A message that fails content validation is replaced by a deterministic
+    #: template and counted here, so a model drifting toward threats or
+    #: credential requests shows up as a number rather than as a complaint.
+    messages_composed: int = 0
+    messages_from_model: int = 0
+    messages_rejected: int = 0
     #: Actions that passed decision-time checks but failed at execution time.
     #: Correctly *blocked*, so not violations -- but a non-zero count means the
     #: policy is planning actions that go stale, which is worth knowing.
@@ -144,6 +151,7 @@ def run(
     store: RecoveryStore | None = None,
     health: IssuerHealthMonitor | None = None,
     ledger: AuditLedger | None = None,
+    composer=None,
     collect_training: bool = False,
     on_decision: Callable[[Decision, RiskEvent], None] | None = None,
     max_horizon_days: int = 60,
@@ -317,6 +325,18 @@ def run(
         is_debit = action.kind in DEBIT_ACTIONS
         is_comms = action.kind in COMMS_ACTIONS
 
+        # Draft the actual words for anything that reaches a human. Composition
+        # happens at execution rather than at decision time, because the message
+        # is only real if the action survives the second guardrail check.
+        drafted = None
+        if is_comms and composer is not None:
+            drafted = composer.compose(ev, cls, action)
+            result.messages_composed += 1
+            if drafted.source == "llm":
+                result.messages_from_model += 1
+            if drafted.violations:
+                result.messages_rejected += 1
+
         store.record(
             ActionLogEntry(
                 event_id=eid,
@@ -376,6 +396,20 @@ def run(
                     "cost_paise": cost,
                     "recovered": recovered,
                     "amount_paise": ev.amount_paise if recovered else 0,
+                    # The exact words sent, and where they came from. A merchant
+                    # asking "what did you say to my customer" needs the text,
+                    # not a template id.
+                    **(
+                        {
+                            "message": drafted.text,
+                            "message_source": drafted.source,
+                            "message_locale": drafted.locale,
+                            **({"message_rejected": list(drafted.violations)}
+                               if drafted.violations else {}),
+                        }
+                        if drafted is not None
+                        else {}
+                    ),
                 },
                 ts=now,
             )

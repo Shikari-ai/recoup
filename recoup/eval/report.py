@@ -136,6 +136,22 @@ def compliance_section(r: BacktestResult) -> str:
     if r.ledger is not None:
         v = r.ledger.verify()
         lines.append(f"audit ledger          {len(r.ledger):,} records, {v.detail}")
+    a = r.agent
+    if a.messages_composed:
+        rejected = (
+            f", {a.messages_rejected} replaced by a template after failing "
+            f"content validation"
+            if a.messages_rejected
+            else ", none failed content validation"
+        )
+        lines.append(
+            f"customer messages     {a.messages_composed:,} drafted "
+            f"({a.messages_from_model:,} by the model{rejected})"
+        )
+        lines.append(
+            "                      every message stored verbatim in the ledger, "
+            "in the payer's language"
+        )
     if total_viol == 0:
         lines.append("")
         lines.append(

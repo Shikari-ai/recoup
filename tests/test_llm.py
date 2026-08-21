@@ -219,7 +219,9 @@ def test_banned_content_is_rejected(text, why):
 
 def test_length_limit_is_enforced_per_channel():
     long = "x" * (MAX_LEN[Channel.SMS] + 1)
-    assert any("too long" in p for p in validate(long, Channel.SMS))
+    # SMS reports segments rather than raw length, because the billable unit is
+    # the segment and the limit depends on the script. See the UCS-2 tests below.
+    assert any("segments" in p for p in validate(long, Channel.SMS))
     assert not any("too long" in p for p in validate(long, Channel.EMAIL))
 
 
@@ -282,3 +284,77 @@ def test_templates_exist_and_validate_for_every_locale(locale):
     msg = c.compose(ev, cls, Action(ActionKind.SEND_NUDGE, T0, channel=Channel.SMS))
     assert msg.text.strip()
     assert msg.locale == locale
+
+
+# ---------------------------------------------------------------------------
+# SMS segmentation: the limit depends on the script, not just the length
+# ---------------------------------------------------------------------------
+
+
+def test_gsm7_message_fits_160():
+    from recoup.llm.copy import sms_segments
+
+    segs, limit, ucs2 = sms_segments("a" * 160)
+    assert (segs, limit, ucs2) == (1, 160, False)
+
+
+def test_gsm7_message_over_160_splits():
+    from recoup.llm.copy import sms_segments
+
+    segs, _, ucs2 = sms_segments("a" * 161)
+    assert segs == 2 and not ucs2
+
+
+def test_devanagari_forces_ucs2_and_a_70_char_limit():
+    """One non-GSM-7 character re-encodes the entire message, not just itself."""
+    from recoup.llm.copy import sms_segments
+
+    segs, limit, ucs2 = sms_segments("क" * 70)
+    assert (segs, limit, ucs2) == (1, 70, True)
+    segs, _, _ = sms_segments("क" * 71)
+    assert segs == 2
+
+
+def test_a_single_non_gsm7_character_halves_the_limit():
+    """The trap: a mostly-ASCII message with one rupee-adjacent glyph."""
+    from recoup.llm.copy import sms_segments
+
+    ascii_only = "a" * 100
+    assert sms_segments(ascii_only)[0] == 1
+    # One Devanagari character anywhere forces UCS-2 for the whole body.
+    assert sms_segments(ascii_only + "क")[0] == 2
+
+
+def test_validator_rejects_a_multi_segment_sms():
+    long_hindi = "क" * 120
+    problems = validate(long_hindi, Channel.SMS)
+    assert any("segments" in p for p in problems)
+    assert any("UCS-2" in p for p in problems)
+
+
+def test_validator_allows_a_single_segment_sms():
+    assert validate("क" * 60, Channel.SMS) == []
+
+
+def test_every_shipped_template_fits_one_sms_segment():
+    """Templates are the guaranteed fallback, so they must always be sendable.
+
+    Hindi templates are necessarily terser than English ones: 70 characters
+    against 160. If a template ever exceeds a segment the fallback path starts
+    truncating real messages mid-sentence.
+    """
+    from recoup.llm.copy import _TEMPLATES, sms_segments
+
+    over = []
+    for (rec, locale), tpl in _TEMPLATES.items():
+        text = tpl.format(amount="Rs 4,767.00", merchant="Acme Retail", link="{link}")
+        segs, limit, _ = sms_segments(text)
+        if segs > 1:
+            over.append(f"{rec.value}/{locale}: {len(text)} chars > {limit}")
+    assert not over, "templates exceeding one SMS segment: " + "; ".join(over)
+
+
+def test_non_sms_channels_use_plain_length_limits():
+    """UCS-2 is an SMS concern. WhatsApp and email are not segmented this way."""
+    assert validate("क" * 300, Channel.WHATSAPP) == []
+    assert validate("क" * 300, Channel.EMAIL) == []

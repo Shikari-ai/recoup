@@ -5,9 +5,9 @@ Why a model belongs here
 The right words for "your autopay bounced" differ by failure class (a bank
 outage is our problem, insufficient funds is awkward, an expired card is
 neither), by language (a large share of Indian payers read Hinglish more
-comfortably than formal English), and by channel (160 characters of SMS is a
-different craft from an email). That is a natural-language generation problem
-with real variation, and templates handle it badly.
+comfortably than formal English), and by channel (an SMS is a different craft
+from an email). That is a natural-language generation problem with real
+variation, and templates handle it badly.
 
 Why the model does not get the last word
 ----------------------------------------
@@ -16,8 +16,11 @@ you have a harassment complaint; get the content wrong and you have made a
 commitment on the merchant's behalf. So every generated message passes a
 validator before it can be sent:
 
-* **Length**, per channel. An SMS that overflows silently becomes two SMS, at
-  double cost and with a mangled second half.
+* **Length**, per channel -- and for SMS, per *script*. A GSM-7 message fits
+  160 characters, but one character outside that alphabet re-encodes the whole
+  message as UCS-2 and drops the limit to 70. Devanagari is entirely outside
+  GSM-7, so a Hindi nudge that looks short at 90 characters is silently two
+  segments at double the cost. Nothing fails; the bill is just wrong.
 * **Banned content.** No legal threats, no credit-score threats, no fabricated
   deadlines, no "final notice". Debt-collection harassment rules exist, and a
   model asked to be persuasive will drift toward exactly this language.
@@ -43,6 +46,16 @@ from ..taxonomy import Classification
 from .base import Provider, get_provider
 
 #: Hard per-channel ceilings, in characters.
+#:
+#: SMS has two ceilings, not one, and using the wrong one silently doubles the
+#: bill. A GSM-7 message fits 160 characters; the moment a single character
+#: falls outside that alphabet the whole message is re-encoded as UCS-2 and the
+#: limit drops to **70**. Devanagari is entirely outside GSM-7, so a Hindi nudge
+#: that looks comfortably short at 90 characters is actually two segments.
+#:
+#: At scale that is a real cost line, and it is invisible unless you check: the
+#: message still sends, the customer still receives it, and the bill is twice
+#: what the model predicted.
 MAX_LEN: dict[Channel, int] = {
     Channel.SMS: 160,
     Channel.WHATSAPP: 700,
@@ -50,6 +63,35 @@ MAX_LEN: dict[Channel, int] = {
     Channel.VOICE: 400,
     Channel.NONE: 160,
 }
+
+#: Single-segment limit once a message is forced into UCS-2.
+SMS_UCS2_LIMIT = 70
+
+#: The GSM 03.38 basic alphabet plus its extension table. Anything outside this
+#: forces UCS-2 for the entire message, not just the offending character.
+GSM7 = set(
+    "@\u00a3$\u00a5\u00e8\u00e9\u00f9\u00ec\u00f2\u00c7\n\u00d8\u00f8\r\u00c5\u00e5"
+    "\u0394_\u03a6\u0393\u039b\u03a9\u03a0\u03a8\u03a3\u0398\u039e\u00c6\u00e6\u00df\u00c9"
+    " !\"#\u00a4%&'()*+,-./0123456789:;<=>?"
+    "\u00a1ABCDEFGHIJKLMNOPQRSTUVWXYZ\u00c4\u00d6\u00d1\u00dc\u00a7"
+    "\u00bfabcdefghijklmnopqrstuvwxyz\u00e4\u00f6\u00f1\u00fc\u00e0"
+    "^{}\\[~]|\u20ac"
+)
+
+
+def sms_segments(text: str) -> tuple[int, int, bool]:
+    """(segments, per-segment limit, is_ucs2) for an SMS body.
+
+    Concatenated messages carry a header that eats into each segment -- 153
+    characters for GSM-7, 67 for UCS-2 -- which is why a 161-character message
+    costs two segments rather than one and a bit.
+    """
+    ucs2 = any(ch not in GSM7 for ch in text)
+    single, multi = (SMS_UCS2_LIMIT, 67) if ucs2 else (160, 153)
+    n = len(text)
+    if n <= single:
+        return 1, single, ucs2
+    return -(-n // multi), single, ucs2
 
 #: Content that may never appear in a recovery message.
 BANNED = [
@@ -111,9 +153,19 @@ def validate(text: str, channel: Channel) -> list[str]:
     stripped = text.strip()
     if not stripped:
         return ["empty message"]
-    limit = MAX_LEN.get(channel, 160)
-    if len(stripped) > limit:
-        problems.append(f"too long for {channel.value}: {len(stripped)} > {limit} chars")
+    if channel is Channel.SMS:
+        segs, limit, ucs2 = sms_segments(stripped)
+        if segs > 1:
+            problems.append(
+                f"would send as {segs} SMS segments: {len(stripped)} chars, limit "
+                f"{limit} ({'UCS-2, non-GSM-7 script' if ucs2 else 'GSM-7'})"
+            )
+    else:
+        limit = MAX_LEN.get(channel, 160)
+        if len(stripped) > limit:
+            problems.append(
+                f"too long for {channel.value}: {len(stripped)} > {limit} chars"
+            )
     low = stripped.lower()
     for pattern, label in BANNED:
         if re.search(pattern, low):
@@ -131,9 +183,10 @@ _TEMPLATES: dict[tuple[Recoverability, str], str] = {
     (Recoverability.RETRY_ONLY, "en_IN"):
         "Hi! Your {amount} payment to {merchant} did not go through. "
         "We will try again shortly, no action needed from you.",
+    # The Hindi templates are deliberately terser than the English ones: they
+    # must fit 70 characters, not 160, because Devanagari forces UCS-2.
     (Recoverability.RETRY_ONLY, "hi_IN"):
-        "नमस्ते! {merchant} को आपका {amount} का भुगतान पूरा नहीं हो सका। "
-        "हम जल्द ही दोबारा कोशिश करेंगे, आपको कुछ नहीं करना है।",
+        "{merchant}: {amount} का भुगतान अटका। हम दोबारा कोशिश करेंगे।",
     (Recoverability.RETRY_ONLY, "hinglish"):
         "Hi! {merchant} ka {amount} ka payment complete nahi hua. "
         "Hum thodi der mein dobara try karenge, aapko kuch karne ki zarurat nahi.",
@@ -141,8 +194,7 @@ _TEMPLATES: dict[tuple[Recoverability, str], str] = {
         "Hi! Your {amount} payment to {merchant} could not be completed. "
         "You can finish it here: {link}",
     (Recoverability.CUSTOMER_ACTION, "hi_IN"):
-        "नमस्ते! {merchant} को {amount} का भुगतान पूरा नहीं हुआ। "
-        "आप इसे यहाँ पूरा कर सकते हैं: {link}",
+        "{merchant}: {amount} का भुगतान अधूरा। यहाँ पूरा करें: {link}",
     (Recoverability.CUSTOMER_ACTION, "hinglish"):
         "Hi! {merchant} ka {amount} payment complete nahi ho paya. "
         "Aap yahan complete kar sakte hain: {link}",
@@ -150,8 +202,7 @@ _TEMPLATES: dict[tuple[Recoverability, str], str] = {
         "Hi! Your saved payment method for {merchant} is no longer usable, so "
         "your {amount} payment did not go through. Update it here: {link}",
     (Recoverability.INSTRUMENT_CHANGE, "hi_IN"):
-        "नमस्ते! {merchant} के लिए आपका सेव किया गया भुगतान तरीका अब काम नहीं कर रहा, "
-        "इसलिए {amount} का भुगतान नहीं हुआ। इसे यहाँ अपडेट करें: {link}",
+        "{merchant}: भुगतान तरीका बंद। {amount} हेतु अपडेट करें: {link}",
     (Recoverability.INSTRUMENT_CHANGE, "hinglish"):
         "Hi! {merchant} ke liye aapka saved payment method ab kaam nahi kar raha, "
         "isliye {amount} ka payment nahi hua. Yahan update karein: {link}",
@@ -249,8 +300,10 @@ class MessageComposer:
         text = render_template(event, cls, locale)
         problems = validate(text, channel)
         if problems and channel is Channel.SMS:
-            # Templates must fit the channel too. Truncate to the last complete
-            # sentence rather than mid-word.
-            text = text[: MAX_LEN[Channel.SMS]].rsplit(" ", 1)[0]
+            # Templates must fit the channel too. Truncate at the correct limit
+            # for the script -- 70 for UCS-2, 160 for GSM-7 -- and cut on a word
+            # boundary rather than mid-word.
+            _, limit, _ = sms_segments(text)
+            text = text[:limit].rsplit(" ", 1)[0]
             problems = validate(text, channel)
         return ComposedMessage(text, channel, locale, source, tuple(problems))

@@ -236,7 +236,13 @@ def explain_event(entries: list[LedgerEntry], event_id: str) -> str:
     for e in rows:
         p = e.payload
         out.append(f"[{e.seq:>5}] {e.ts}  {e.kind}")
-        for key in ("failure_class", "provenance", "action", "rail", "channel", "reason"):
+        # "message" is here deliberately: the first question a merchant asks
+        # about an automated nudge is what it actually said to their customer,
+        # and an audit trail that cannot answer that is incomplete.
+        for key in (
+            "failure_class", "provenance", "action", "rail", "channel",
+            "message", "message_source", "message_rejected", "reason",
+        ):
             if key in p and p[key] is not None:
                 out.append(f"          {key:<16} {p[key]}")
         if blocked := p.get("blocked"):

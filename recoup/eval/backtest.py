@@ -156,6 +156,7 @@ def backtest(
     explore: float = 0.85,
     ledger_path: str | None = None,
     triage: bool = True,
+    compose_messages: bool = True,
     verbose: bool = True,
 ) -> BacktestResult:
     config = config or ScenarioConfig()
@@ -170,6 +171,12 @@ def backtest(
     # decision, not part of the decision logic -- giving one arm a better view
     # of the same event would measure the input rather than the policy.
     classifier = default_classifier(enable_triage=triage)
+
+    # Message composition for anything that reaches a human. Offline by default,
+    # validated before sending, with a deterministic template as the fallback.
+    from ..llm.copy import MessageComposer
+
+    composer = MessageComposer() if compose_messages else None
 
     say(f"[1/5] generating {config.n_events:,} at-risk events over {config.days} days...")
     events, world, truth = generate(config)
@@ -264,6 +271,7 @@ def backtest(
             store=s,
             health=h,
             ledger=ledger if name == "recoup" else None,
+            composer=composer if name == "recoup" else None,
         )
         say(
             f"      {name:<12} attributed {rupees(arms[name].attributed_paise):>18}  "
