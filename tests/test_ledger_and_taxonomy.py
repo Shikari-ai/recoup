@@ -241,3 +241,49 @@ def test_alternate_rails_never_returns_the_current_rail():
 )
 def test_rupee_formatting(paise, expected):
     assert rupees(paise) == expected
+
+
+def test_prev_hash_break_is_detected_independently_of_sequence():
+    """Isolate the back-link check from the sequence check.
+
+    Found by mutation testing: disabling the prev_hash comparison left the whole
+    suite green. `test_reordered_entries_are_detected` swaps two entries, which
+    also breaks sequence numbering -- and the seq check fires first, so the
+    back-link branch was never exercised on its own.
+
+    This forges a chain with perfect sequence numbers and a broken link, which
+    is what a splice attack looks like: append a plausible history, renumber it,
+    and hope nobody checks the hashes.
+    """
+    good = AuditLedger()
+    for i in range(4):
+        good.append("decision", {"event_id": f"evt_{i}"}, ts=T0)
+    entries = list(good)
+
+    # Rebuild entry 2 pointing at the wrong predecessor, then recompute its own
+    # hash so it is internally consistent. Only the back-link is wrong.
+    victim = entries[2]
+    forged = replace(victim, prev_hash=entries[0].hash)
+    forged = replace(forged, hash=forged.recompute())
+    entries[2] = forged
+
+    assert forged.recompute() == forged.hash, "the forgery is self-consistent"
+    assert forged.seq == 2, "sequence numbering is untouched"
+
+    r = verify_entries(entries)
+    assert not r.ok, "a spliced chain with valid sequence numbers verified as intact"
+    assert r.broken_at == 2
+    assert "prev_hash" in r.detail
+
+
+def test_a_wholly_reconstructed_chain_still_verifies():
+    """Honest scope: this is tamper-EVIDENT, not tamper-proof.
+
+    Someone who can rewrite every record can recompute every hash. The defence
+    is anchoring head() externally, which is a deployment decision. Pinning the
+    limitation in a test keeps the README's claim honest.
+    """
+    forged = AuditLedger()
+    for i in range(4):
+        forged.append("decision", {"event_id": f"evt_{i}", "action": "TAMPERED"}, ts=T0)
+    assert verify_entries(list(forged)).ok

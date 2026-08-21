@@ -632,6 +632,7 @@ python scripts/health_signal.py          # when does outage detection work?
 python scripts/ceiling.py                # how good could any model be?
 python scripts/verify_docs.py            # execute every command in these docs
 python scripts/verify_numbers.py         # every quoted figure vs results/
+python scripts/mutate.py                 # do the tests catch a broken guardrail?
 ```
 
 ---

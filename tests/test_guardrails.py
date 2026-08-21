@@ -341,3 +341,57 @@ def test_pack_rejects_unreachable_debit_cap(pack):
         from recoup.policypack import _validate
 
         _validate(replace(pack, max_debit_attempts=99, max_actions_per_event=6))
+
+
+# ---------------------------------------------------------------------------
+# Gates that other gates normally mask
+#
+# Found by mutation testing: raising max_debit_attempts 100x left the whole
+# suite green, because the default pack sets max_actions_per_event to the same
+# value and that gate binds first. A rule nothing can distinguish from its
+# neighbour is a rule nobody is testing.
+# ---------------------------------------------------------------------------
+
+
+def test_debit_cap_binds_independently_of_the_action_cap(store):
+    """Isolate the debit cap by giving the action cap room to spare."""
+    pack = replace(load_pack(), max_debit_attempts=2, max_actions_per_event=6)
+    engine = GuardrailEngine(pack, store)
+    e = make_event(rail=Rail.UPI_COLLECT, error_code="gateway_timeout")
+
+    for i in range(2):
+        store.record(
+            ActionLogEntry(
+                event_id=e.event_id, merchant_id="mch_1", customer_id="cust_1",
+                instrument_key=instrument_key(e), action_kind=ActionKind.RETRY_SAME_RAIL,
+                executed_at=T0 + timedelta(hours=i), rail=Rail.UPI_COLLECT,
+            )
+        )
+    later = T0 + timedelta(days=1)
+    v = verdict(engine, e, Action(ActionKind.RETRY_SAME_RAIL, later, rail=Rail.UPI_COLLECT),
+                now=later, code="gateway_timeout")
+
+    assert not v["stopping.max_debit_attempts"].allowed, (
+        "the debit cap did not bind even with the action cap left slack"
+    )
+    # And prove the action cap was NOT the thing doing the work.
+    assert v["stopping.max_actions_per_event"].allowed
+
+
+def test_a_comms_action_is_unaffected_by_the_debit_cap(store):
+    """The debit cap counts debits, not every action."""
+    pack = replace(load_pack(), max_debit_attempts=1, max_actions_per_event=6)
+    engine = GuardrailEngine(pack, store)
+    e = make_event(rail=Rail.UPI_COLLECT, error_code="checkout_abandoned",
+                   kind=RiskKind.CHECKOUT_ABANDONED)
+    store.record(
+        ActionLogEntry(
+            event_id=e.event_id, merchant_id="mch_1", customer_id="cust_1",
+            instrument_key=instrument_key(e), action_kind=ActionKind.RETRY_SAME_RAIL,
+            executed_at=T0, rail=Rail.UPI_COLLECT,
+        )
+    )
+    later = T0 + timedelta(days=1)
+    v = verdict(engine, e, Action(ActionKind.SEND_NUDGE, later, channel=Channel.SMS),
+                now=later, code="checkout_abandoned")
+    assert "stopping.max_debit_attempts" not in v

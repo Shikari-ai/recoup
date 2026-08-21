@@ -404,8 +404,11 @@ class RecoveryPolicy:
                 guardrails=self.guardrails.check(event, cls, stop, now),
                 rationale=(
                     f"{cls.failure_class.value} is terminal ({cls.provenance}): "
-                    f"{cls.profile.note or 'authorisation is withdrawn or the payment is flagged'}. "
-                    f"Stopping permanently."
+                    + (
+                        cls.profile.note
+                        or "authorisation is withdrawn or the payment is flagged."
+                    ).rstrip(".")
+                    + ". Stopping permanently."
                 ),
             )
 
