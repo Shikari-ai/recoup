@@ -56,10 +56,47 @@ Held-out backtest, 6,000 at-risk receivables over 45 days, seed 42:
 | `no_action` (control) | Rs 0 | 0 | 0 |
 | `fixed_retry` (24h × 3) | Rs 45,51,524 | 3,036 | 0 |
 | `rule_based` (**strong** rulebook) | Rs 1,33,66,199 | 2,961 | 0 |
+| `exhaustive_random` (same budget, no judgment) | Rs 1,11,62,162 | 5,409 | 0 |
 | **`recoup`** | **Rs 1,75,29,657** | 4,553 | **0** |
 
 **+31.1% over the strong rulebook · +285.1% over fixed retry · AUC 0.765 ·
 ECE 0.011 · zero guardrail violations.**
+
+### Is that judgment, or just effort?
+
+A policy can out-recover a rulebook for two very different reasons: it chooses
+better, or it simply keeps acting where the rulebook stops. Those are easy to
+confuse, and I confused them once already in this project.
+
+So there is a fourth arm. `exhaustive_random` runs the identical machinery —
+same candidate generation, same guardrails, same costs — but picks **uniformly
+at random** among permitted actions and ignores the expected-value floor. It is
+the "spend the whole budget, exercise no judgment" control.
+
+**recoup beats it by +57.0%, while taking 16% fewer actions and 49% fewer
+messages.** Spending the budget at random barely beats the rulebook at all.
+The lift is judgment, with volume held constant.
+
+`scripts/ablation.py` takes the last step and switches the model off, keeping
+the whole architecture:
+
+```
+rule_based           Rs 74,61,054     2,013 actions   1,188 msgs     0.0%
+exhaustive_random    Rs 75,91,979     3,605 actions   2,041 msgs    +1.8%
+ev_untrained         Rs 65,07,467     3,204 actions   1,622 msgs   -12.8%
+recoup               Rs 1,02,89,329   3,024 actions     985 msgs   +37.9%
+```
+
+Read the third row carefully. **The architecture without a working model is
+worse than acting at random.** With `P(recover)` held constant, expected value
+collapses to "chase the biggest amounts with the cheapest actions", which
+cheerfully retries expired cards and nudges people who need a rail switch.
+
+Which means essentially all of the lift — **+58.1% over the same system with
+the model switched off** — is the learned model. That is the evidence that the
+ML earns its place rather than decorating a good architecture. Had this gap
+been small, the honest thing would have been to delete the model and ship the
+rulebook.
 
 One seed is an anecdote, so `scripts/stability.py` re-runs the entire pipeline
 across 8 independent scenarios of 4,000 receivables each:
@@ -101,16 +138,31 @@ which fails closed to one attempt and no silent retry.
 ### It also survives having its assumptions taken away
 
 One simulator is one simulator, so `python -m recoup sensitivity` re-runs the
-whole pipeline across **19 perturbed worlds**: 15.2% median lift, positive in
-**17/19**, zero violations throughout. The two losses are named and explained in
-the output rather than dropped.
+entire pipeline across **23 perturbed worlds**: median **+38.3%**, positive in
+**23/23** both on recovered value and after every action cost is deducted, zero
+violations throughout — while sending a median **0.85×** the rulebook's messages.
+
+Four of those worlds exist specifically to break it. A first grid came back
+19/19 and I treated that as a warning rather than a result: winning everywhere
+means the grid is not searching where you are weak. So I added worlds that
+remove the *information* an EV policy needs, rather than merely changing the
+numbers it acts on — no class signal, no action signal, pure noise, and
+messaging at 60× cost. It survives all four, and the tool still says so in its
+own output:
+
+> *The agent wins on merit in every perturbed world tested. Treat that with some
+> suspicion rather than satisfaction: it means the perturbation grid is not yet
+> finding the regime where a rulebook is the better answer.*
+
+That remains the honest position, and the regime where a rulebook wins is real
+and documented — it is below ~2,000 receivables, measured in the learning curve
+below. This grid varies the world, not the data volume, so it cannot find it.
 
 The row worth reading is `advantage_stripped` — a world built to falsify this
 project, with *every* edge the agent claims removed at once: no salary cycle,
 almost no issuer outages, no diminishing returns on repetition. The agent should
-collapse toward the rulebook there.
-
-It wins by **+26.2%**, against +15.4% in the baseline world.
+collapse toward the rulebook there. It wins by **+39.6%**, against +37.9% in the
+baseline world.
 
 The reason is the actual case for learning over rules, and I didn't anticipate
 it. The rulebook **hardcodes** "retry insufficient funds in the salary window."
@@ -118,28 +170,6 @@ In a world where salary timing does nothing, that rule makes it wait weeks for
 no benefit while receivables go stale and hit deadlines. The learned policy
 notices the effect is gone and retries sooner. A hardcoded heuristic cannot tell
 when its own premise has expired; an EV calculation can.
-
-### The classifier is measured by consequence, not by accuracy
-
-Taxonomy accuracy is **96.9%** on held-out events (macro-F1 0.952), and that
-number is nearly useless alone — the classes are imbalanced and their errors are
-asymmetric. So `recoup backtest` splits every misclassification by what it would
-actually cause:
-
-```
-  errors by consequence, not by count:
-    dangerous          0   terminal failure read as actionable
-    over-cautious      0   actionable failure read as terminal
-    benign            75   wrong class, same recovery strategy
-
-  TERMINAL RECALL  1.0000   (33 terminal failures in the slice)
-```
-
-`insufficient_funds` read as `gateway_error` costs a wasted attempt.
-`mandate_revoked` read as `insufficient_funds` is an **unauthorised debit**.
-Accuracy counts those identically. **Terminal recall** is the number that
-matters, and every confusion the classifier does make lands in `unknown` —
-which fails closed to one attempt and no silent retry.
 
 ### A component I built, measured, and turned off
 
@@ -336,7 +366,7 @@ proposed enough violations to be worth testing, then verifies by **independent
 post-hoc replay** that not one got through.
 
 ```bash
-pytest tests/ -q          # 176 passed
+pytest tests/ -q          # 223 passed
 ```
 
 ---
@@ -478,7 +508,7 @@ docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
 scripts/                   stability · learning_curve · tune_model · tune_stopping
 results/                   committed backtest, stability, sensitivity, curve output
-tests/                     176 tests, incl. adversarial + no-leakage
+tests/                     223 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -489,11 +519,14 @@ python -m recoup backtest --events 6000  # full held-out comparison
 python -m recoup policy                  # print the active compliance pack
 python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
-python -m recoup sensitivity             # 19 perturbed worlds — does it hold?
+python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 176 tests
+pytest tests/ -q                         # 223 tests
 python scripts/stability.py --seeds 8    # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
+python scripts/ablation.py               # which part is doing the work?
+python scripts/health_signal.py          # when does outage detection work?
+python scripts/verify_docs.py            # execute every command in these docs
 ```
 
 ---

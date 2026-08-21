@@ -16,3 +16,31 @@ outages_frequent      Rs 1,42,49,790.00Rs 94,30,383.00    51.1%      51.1%   0.8
 outage_mild           Rs 1,03,74,463.00Rs 74,61,054.00    39.0%      39.0%   0.83x  0.761     0
 stale_fast            Rs 99,85,767.00Rs 72,19,836.00    38.3%      38.2%   0.84x  0.783     0
 stale_slow            Rs 1,04,87,039.00Rs 76,35,570.00    37.3%      37.3%   0.85x  0.778     0
+friction_high         Rs 79,46,777.00Rs 67,08,683.00    18.5%      18.3%   0.85x  0.774     0
+payers_flaky          Rs 75,02,769.00Rs 66,23,671.00    13.3%      13.2%   0.85x  0.746     0
+payers_reliable       Rs 1,14,44,868.00Rs 76,95,587.00    48.7%      48.7%   0.84x  0.779     0
+advantage_stripped    Rs 1,48,01,208.00Rs 1,06,01,665.00    39.6%      39.6%   0.90x  0.733     0
+no_class_signal       Rs 77,46,908.00Rs 55,13,826.00    40.5%      40.7%   1.16x  0.658     0
+no_action_signal      Rs 78,48,939.00Rs 50,09,815.00    56.7%      56.9%   1.14x  0.765     0
+pure_noise            Rs 56,43,511.00Rs 42,76,462.00    32.0%      31.9%   0.98x  0.631     0
+comms_8x_cost         Rs 1,02,69,531.00Rs 74,61,054.00    37.6%      37.5%   0.85x  0.773     0
+comms_60x_cost        Rs 1,00,64,582.00Rs 74,61,054.00    34.9%      35.0%   0.78x  0.770     0
+-------------------------------------------------------------------------------------
+
+worlds tested            23
+agent beats rulebook in  23/23  on recovered value
+                         23/23  after every action cost is deducted
+lift vs rulebook         median +38.3%   min +13.3%   max +56.7%
+net of action costs      median +38.2%   min +13.2%   max +56.9%
+messages vs rulebook     median 0.85x   max 1.16x   (customer burden; not priced in the objective)
+guardrail violations     0  (across every world)
+
+The agent wins on merit in every perturbed world tested. Treat that with
+some suspicion rather than satisfaction: it means the perturbation grid
+is not yet finding the regime where a rulebook is the better answer.
+
+assumptions the result is most sensitive to:
+  payers_flaky           lift +13.3%  (moves the result by 24.6%)
+  friction_high          lift +18.5%  (moves the result by 19.5%)
+  no_action_signal       lift +56.7%  (moves the result by 18.8%)
+  decay_slow             lift +56.1%  (moves the result by 18.2%)

@@ -13,6 +13,7 @@ arm                           attributed     net of cost   events  actions   msg
 no_action (control)              Rs 0.00         Rs 0.00        0        0      0     0
 fixed_retry (24h x3)     Rs 45,51,524.00 Rs 45,51,524.00      365    3,036      0     0
 rule_based (rulebook)   Rs 1,33,66,199.00Rs 1,33,47,405.90      636    2,961  1,728     0
+exhaustive_random       Rs 1,11,62,162.00Rs 1,11,42,998.18      898    5,409  3,002     0
 recoup (this agent)     Rs 1,75,29,657.00Rs 1,74,98,368.63    1,033    4,553  1,543     0
 ---------------------------------------------------------------------------------------
 
@@ -20,6 +21,12 @@ lift of recoup over each baseline (agent-attributed recovery):
   vs no_action (control)      gross      n/a   net of cost      n/a
   vs fixed_retry (24h x3)     gross  +285.1%   net of cost  +284.5%
   vs rule_based (rulebook)    gross   +31.1%   net of cost   +31.1%
+  vs exhaustive_random        gross   +57.0%   net of cost   +57.0%
+
+  exhaustive_random spends the same action budget at random, with no
+  scoring and no expected-value floor. The gap between it and recoup is
+  judgement with volume held constant -- without it, a policy could look
+  clever merely by being less willing than the rulebook to stop.
 
 -- EFFICIENCY ----------------------------------------------------------------
 
@@ -27,6 +34,7 @@ arm                               cost   cost/Re recovered  actions/recovery
 ----------------------------------------------------------------------------
 fixed_retry (24h x3)           Rs 0.00              0.0000              8.32
 rule_based (rulebook)     Rs 18,793.10              0.0014              4.66
+exhaustive_random         Rs 19,163.82              0.0017              6.02
 recoup (this agent)       Rs 31,288.37              0.0018              4.41
 
 -- WHERE THE LIFT COMES FROM -------------------------------------------------
@@ -60,7 +68,7 @@ send_payment_link                1,312          728            0
 -- COMPLIANCE ----------------------------------------------------------------
 
 policy pack           in_default
-actions executed      10,550 across all arms
+actions executed      15,959 across all arms
 guardrail violations  0
 late blocks (recoup)  24  (planned, then correctly refused at execution time)
 audit ledger          12,916 records, chain intact, head=78973c41f21d

@@ -526,6 +526,39 @@ class BaselinePolicy:
         )
 
 
+def exhaustive_random(pack, store, guardrails, health, *, seed: int = 0):
+    """Control arm: spends the whole action budget, exercises no judgement.
+
+    This isolates the two things that can produce lift, which are easy to
+    confuse and were confused once already in this project.
+
+    A policy can out-recover a rulebook for two quite different reasons:
+
+    1. **Judgement** -- choosing a better action, on a better rail, at a better
+       time, and declining to act when acting is not worth it.
+    2. **Volume** -- simply using more of a permitted, largely free action
+       budget than a simpler policy bothers to.
+
+    The rulebook stops early by construction, so any comparison against it
+    conflates the two. This arm removes judgement entirely while keeping volume:
+    it picks uniformly at random among the actions the guardrails permit, and it
+    never applies an expected-value floor, so it acts whenever it legally can.
+
+    Read the results this way:
+
+    * ``recoup`` >> ``exhaustive_random``  -> the lift is judgement.
+    * ``recoup`` ~= ``exhaustive_random``  -> the lift is volume, and any
+      policy willing to spend the budget would match it.
+
+    Implemented as the real policy with exploration forced to 1.0, so it shares
+    candidate generation and guardrails exactly -- the only difference is that
+    nothing scores the candidates.
+    """
+    return RecoveryPolicy(
+        pack, LogisticModel(), health, store, guardrails, explore=1.0, seed=seed
+    )
+
+
 class NoActionPolicy(BaselinePolicy):
     """The control arm: do nothing. Whatever it recovers is organic."""
 

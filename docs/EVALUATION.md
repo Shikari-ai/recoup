@@ -40,8 +40,8 @@ is production-shaped; the evidence that it *works* is not production evidence.
 **Claimed:** *Under identical events, identical guardrails, identical action
 costs and identical random draws, an EV-ranked policy recovered a median 30.5%
 more attributed value than a strong hand-written rulebook across 8 independent
-scenarios (positive in 8/8), and a median 15.2% more across 19 perturbed worlds
-(positive in 17/19) — while executing zero guardrail violations in every run,
+scenarios (positive in 8/8), and a median 38.3% more across 23 perturbed worlds
+(positive in 23/23) — while executing zero guardrail violations in every run,
 and only above a measured data threshold of ~2,000 receivables.*
 
 The second is a statement about **decision logic**, which is what transfers.
@@ -138,6 +138,7 @@ guardrail violations across every seed and arm: 0
 | `no_action` | Control. Recovers only what payers self-serve |
 | `fixed_retry` | Retry every 24h, 3× — what most merchants actually run |
 | `rule_based` | **The real bar.** See below |
+| `exhaustive_random` | Same budget, spent at random. Isolates judgment from volume |
 | `recoup` | EV-ranked, guardrailed, learned |
 
 `RuleBasedPolicy` is not a strawman. It stops on terminal classes, sends the RBI
@@ -186,31 +187,49 @@ negative lift without softening it.
 
 The strongest objection to this project is that I wrote both the simulator and
 the agent. `python -m recoup sensitivity` answers it with evidence: the entire
-pipeline re-runs under 19 perturbed worlds.
+pipeline re-runs under 23 perturbed worlds.
 
 ```
-worlds tested            19
-agent beats rulebook in  17/19
-lift vs rulebook         median +15.2%   min -4.1%   max +30.4%
+worlds tested            23
+agent beats rulebook in  23/23  on recovered value
+                         23/23  after every action cost is deducted
+lift vs rulebook         median +38.3%   min +13.3%   max +56.7%
+net of action costs      median +38.2%   min +13.2%   max +56.9%
+messages vs rulebook     median 0.85x    max 1.16x
 guardrail violations     0  (across every world)
-
-worlds where the agent does NOT win, and why:
-    -4.1%  salary_strong          salary cycle dominates liquidity
-    -2.7%  escalate_decay_fast    repeat escalations nearly worthless
 ```
 
-Both losses are legible, and both are the *right* result. When the salary effect
-is enormous, the rulebook's hardcoded salary rule is close to optimal and the
-model's learned version is a noisier approximation of it. When repeat
-escalations are worthless, "escalate once then stop" is simply the correct
-policy and there is nothing to learn.
+The agent wins everywhere, and *recovers more while sending fewer messages* in
+almost every world. Winning everywhere is a warning rather than a result, and
+the tool says so in its own output:
 
-**The most interesting row is `advantage_stripped`** — a world built to
-falsify this project, with every edge the agent claims removed at once: no
-salary cycle, almost no issuer outages, and no diminishing returns on
-repetition. The agent should collapse toward the rulebook there.
+> *The agent wins on merit in every perturbed world tested. Treat that with some
+> suspicion rather than satisfaction: it means the perturbation grid is not yet
+> finding the regime where a rulebook is the better answer.*
 
-It wins by **+26.2%**, more than the +15.4% baseline.
+That is the honest reading. A first grid of 19 worlds came back 19/19, so four
+more were added that remove the *information* an EV policy needs rather than
+merely changing the numbers it acts on: no class signal (every failure class
+behaves identically), no action signal (every action works equally well), pure
+noise (class, action and payer all uninformative), and messaging at 60× cost.
+It survives all four.
+
+The regime where a rulebook genuinely wins is real, and it is documented above:
+**below ~2,000 receivables**, where the model cannot fit its features. This grid
+varies the world rather than the data volume, so by construction it cannot find
+that regime.
+
+The world the agent finds hardest is `payers_flaky` (+13.3%), where almost every
+payer is unreliable. Expected values compress, selectivity has less to select
+between, and persistence starts to rival discrimination. That is the right
+direction for the weakness to point.
+
+**The row worth reading is `advantage_stripped`** — a world built to falsify
+this project, with every edge the agent claims removed at once: no salary cycle,
+almost no issuer outages, no diminishing returns on repetition. The agent should
+collapse toward the rulebook there.
+
+It wins by **+39.6%**, against +37.9% in the baseline world.
 
 The reason is the actual argument for learning over rules, and I did not
 anticipate it. The rulebook *hardcodes* "retry insufficient funds in the salary
@@ -220,9 +239,9 @@ learned policy observes that the effect is gone and retries sooner.
 
 So the lift is not primarily coming from the clever heuristics I built the
 feature set around. It comes from the EV arithmetic adapting when an assumption
-stops holding — which is precisely the failure mode a hand-written rulebook
-cannot detect, because a hardcoded heuristic has no way of noticing that its
-premise has expired.
+stops holding — precisely the failure mode a hand-written rulebook cannot
+detect, because a hardcoded heuristic has no way of noticing that its premise
+has expired.
 
 ### The cost of stricter compliance, measured
 
@@ -241,6 +260,65 @@ cost of the strict pack: Rs 16,51,041  (16.0% of recovered value)
 
 That is a number a risk team and a revenue team can hold a real conversation
 about, which is the entire point of putting the rules where both can read them.
+
+### Is the lift judgment, or just effort?
+
+A policy can out-recover a rulebook for two quite different reasons, and they
+are easy to confuse:
+
+1. **Judgment** — choosing a better action, on a better rail, at a better time,
+   and declining to act when acting is not worth it.
+2. **Volume** — simply using more of a permitted, largely free action budget
+   than a simpler policy bothers to.
+
+Comparing against the rulebook alone conflates them, because the rulebook stops
+early *by construction* rather than because it is starved: it spends 1.26
+actions per receivable against a cap of 3.
+
+So there is a control arm. `exhaustive_random` runs the identical machinery —
+same candidate generation, same guardrails, same cost model — but chooses
+**uniformly at random** among permitted actions and never applies the
+expected-value floor. It is judgment removed, volume retained.
+
+```
+rule_based           Rs 1,33,66,199   2,961 actions   1,728 msgs
+exhaustive_random    Rs 1,11,62,162   5,409 actions   3,002 msgs
+recoup               Rs 1,75,29,657   4,553 actions   1,543 msgs   +57.0% vs random
+```
+
+**recoup beats it by +57.0% while taking 16% fewer actions and 49% fewer
+messages.** Spending the budget at random is barely better than the rulebook.
+The lift is judgment, with volume held constant.
+
+### Which layer is doing the work?
+
+`scripts/ablation.py` goes one step further and switches the model off while
+keeping the entire architecture — closed action space, candidate generation,
+guardrails, cost-aware ranking — with `P(recover)` held constant:
+
+```
+arm                       attributed   actions   msgs   vs rulebook
+rule_based           Rs 74,61,054.00     2,013  1,188         0.0%
+exhaustive_random    Rs 75,91,979.00     3,605  2,041        +1.8%
+ev_untrained         Rs 65,07,467.00     3,204  1,622       -12.8%
+recoup              Rs 1,02,89,329.00    3,024    985       +37.9%
+
+  spending the budget at random         +1.8%  vs the rulebook
+  + EV architecture, no learning       -14.3%  vs random
+  + fitted propensity model           +58.1%  vs untrained
+```
+
+The middle rung is the interesting one. **The architecture without a working
+model is worse than acting at random.** With `P(recover)` constant, expected
+value collapses to "chase the largest amounts with the cheapest actions", which
+happily retries expired cards and nudges customers who need a rail switch. The
+machinery only helps once something can tell it which actions actually work.
+
+So essentially all of the lift is the learned model: **+58.1% over the same
+system with the model switched off.** That is the evidence that the ML earns its
+place rather than decorating a good architecture — and it is the number I would
+have wanted to see before believing this project. Had the gap been small, the
+honest conclusion would have been to delete the model and ship the rulebook.
 
 ### The component that did not work, and why it is still here
 

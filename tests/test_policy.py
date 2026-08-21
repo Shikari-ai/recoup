@@ -348,3 +348,64 @@ def test_features_are_computable_before_the_action(pack):
 def test_channel_preference_is_ordered_and_complete():
     assert CHANNEL_PREFERENCE[0] is Channel.WHATSAPP
     assert Channel.NONE not in CHANNEL_PREFERENCE
+
+
+# ---------------------------------------------------------------------------
+# The exhaustive-random control arm
+# ---------------------------------------------------------------------------
+
+
+def test_exhaustive_random_acts_whenever_it_legally_can(pack):
+    """The control must actually spend the budget, or it controls for nothing.
+
+    Its whole purpose is to separate judgement from volume. If it inherited the
+    expected-value floor it would stop early like the rulebook and the
+    comparison would measure nothing.
+    """
+    from recoup.policy import exhaustive_random
+
+    store = RecoveryStore()
+    health = IssuerHealthMonitor()
+    pol = exhaustive_random(pack, store, GuardrailEngine(pack, store), health, seed=3)
+
+    # A receivable so small that the EV floor would stop the real policy.
+    ev = event(error_code="checkout_abandoned", kind=RiskKind.CHECKOUT_ABANDONED,
+               amount_paise=1200, rail=Rail.UPI_COLLECT)
+    store.mark_seen(ev.event_id, ev.occurred_at)
+    d = pol.decide(ev, T0)
+    assert d.action.kind not in (ActionKind.STOP, ActionKind.WAIT), (
+        "the control stopped on a low-value receivable; it must ignore the EV floor"
+    )
+    assert "exploration" in d.rationale
+
+
+def test_exhaustive_random_still_obeys_every_guardrail(pack):
+    """Randomly chosen, but never non-compliant."""
+    from recoup.policy import exhaustive_random
+
+    store = RecoveryStore()
+    health = IssuerHealthMonitor()
+    pol = exhaustive_random(pack, store, GuardrailEngine(pack, store), health, seed=3)
+    for code in ("mandate_revoked", "stolen_card", "risk_threshold_exceeded"):
+        ev = event(error_code=code, rail=Rail.UPI_AUTOPAY)
+        store.mark_seen(ev.event_id, ev.occurred_at)
+        d = pol.decide(ev, T0)
+        assert d.action.kind is ActionKind.STOP
+        assert all(g.allowed for g in d.guardrails)
+
+
+def test_exhaustive_random_is_deterministic(pack):
+    """Random choice, fixed seed: the control must be reproducible too."""
+    from recoup.policy import exhaustive_random
+
+    def decide_once():
+        store = RecoveryStore()
+        pol = exhaustive_random(
+            pack, store, GuardrailEngine(pack, store), IssuerHealthMonitor(), seed=11
+        )
+        ev = event(error_code="insufficient_funds", rail=Rail.UPI_COLLECT)
+        store.mark_seen(ev.event_id, ev.occurred_at)
+        d = pol.decide(ev, T0)
+        return d.action.kind, d.action.execute_at, d.action.rail
+
+    assert decide_once() == decide_once()

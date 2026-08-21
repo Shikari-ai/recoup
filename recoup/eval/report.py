@@ -16,6 +16,7 @@ ARM_LABELS = {
     "no_action": "no_action (control)",
     "fixed_retry": "fixed_retry (24h x3)",
     "rule_based": "rule_based (rulebook)",
+    "exhaustive_random": "exhaustive_random",
     "recoup": "recoup (this agent)",
 }
 
@@ -23,6 +24,7 @@ ARM_NOTES = {
     "no_action": "does nothing; recovers only what payers self-serve",
     "fixed_retry": "what most merchants run today",
     "rule_based": "a competent engineer's if-statements",
+    "exhaustive_random": "spends the whole budget, no judgement",
     "recoup": "EV-ranked, guardrailed, learned",
 }
 
@@ -41,7 +43,7 @@ def comparison_table(r: BacktestResult) -> str:
     )
     rows.append(header)
     rows.append("-" * len(header))
-    for key in ("no_action", "fixed_retry", "rule_based", "recoup"):
+    for key in ("no_action", "fixed_retry", "rule_based", "exhaustive_random", "recoup"):
         a: RunResult = r.arms[key]
         rows.append(
             f"{ARM_LABELS[key]:<24}"
@@ -55,7 +57,7 @@ def comparison_table(r: BacktestResult) -> str:
     rows.append("-" * len(header))
     rows.append("")
     rows.append("lift of recoup over each baseline (agent-attributed recovery):")
-    for key in ("no_action", "fixed_retry", "rule_based"):
+    for key in ("no_action", "fixed_retry", "rule_based", "exhaustive_random"):
         rows.append(
             f"  vs {ARM_LABELS[key]:<24} gross {_pct(r.lift_vs(key)):>8}"
             f"   net of cost {_pct(r.net_lift_vs(key)):>8}"
@@ -68,7 +70,7 @@ def efficiency_table(r: BacktestResult) -> str:
         f"{'arm':<24}{'cost':>14}{'cost/Re recovered':>20}{'actions/recovery':>18}",
         "-" * 76,
     ]
-    for key in ("fixed_retry", "rule_based", "recoup"):
+    for key in ("fixed_retry", "rule_based", "exhaustive_random", "recoup"):
         a = r.arms[key]
         cpr = a.cost_per_rupee_recovered
         apr = a.actions_per_recovery
@@ -192,6 +194,11 @@ def full_report(r: BacktestResult) -> str:
             "-- RESULTS " + "-" * 67,
             "",
             comparison_table(r),
+            "",
+            "  exhaustive_random spends the same action budget at random, with no",
+            "  scoring and no expected-value floor. The gap between it and recoup is",
+            "  judgement with volume held constant -- without it, a policy could look",
+            "  clever merely by being less willing than the rulebook to stop.",
             "",
             "-- EFFICIENCY " + "-" * 64,
             "",

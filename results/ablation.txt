@@ -1,0 +1,28 @@
+Ablation: 4,000 events, seed 42, held-out slice
+
+arm                       attributed             net  actions   msgs  vs rulebook
+---------------------------------------------------------------------------------
+rule_based           Rs 74,61,054.00 Rs 74,47,961.30    2,013  1,188        0.0%
+exhaustive_random    Rs 75,91,979.00 Rs 75,80,308.50    3,605  2,041        1.8%
+ev_untrained         Rs 65,07,467.00 Rs 65,01,763.88    3,204  1,622      -12.8%
+recoup              Rs 1,02,89,329.00Rs 1,02,65,793.65    3,024    985       37.9%
+---------------------------------------------------------------------------------
+
+attribution, rung by rung:
+  spending the budget at random         +1.8%  vs the rulebook
+  + EV architecture, no learning       -14.3%  vs random
+  + fitted propensity model            +58.1%  vs untrained
+
+  Read that middle rung carefully. The architecture WITHOUT a working
+  model is worse than acting at random: with P(recover) held constant,
+  expected value collapses to 'chase the largest amounts with the
+  cheapest actions', which happily retries expired cards and nudges
+  people who need a rail switch. The machinery only helps once
+  something can tell it which actions actually work.
+
+  Essentially all of the lift is the learned model: +58.1%
+  over the same system with the model switched off.
+
+  This is the evidence that the ML earns its place rather than decorating
+  a good architecture. If this gap were small, the honest thing would be
+  to delete the model and ship the rulebook.

@@ -45,6 +45,7 @@ from ..policy import (
     NoActionPolicy,
     RecoveryPolicy,
     RuleBasedPolicy,
+    exhaustive_random,
 )
 from ..policypack import PolicyPack, load_pack
 from ..propensity import LogisticModel, ModelReport, evaluate
@@ -76,6 +77,14 @@ class BacktestResult:
     @property
     def agent(self) -> RunResult:
         return self.arms["recoup"]
+
+    @property
+    def judgement_lift(self) -> float:
+        """Lift over an arm that spends the same budget without judgement.
+
+        The cleanest available answer to "is this intelligence or effort?".
+        """
+        return self.lift_vs("exhaustive_random")
 
     def lift_vs(self, other: str) -> float:
         """Relative uplift in agent-attributed recovered value."""
@@ -215,6 +224,10 @@ def backtest(
         ("no_action", lambda p, s, g, h: NoActionPolicy(p, s, g)),
         ("fixed_retry", lambda p, s, g, h: FixedRetryPolicy(p, s, g)),
         ("rule_based", lambda p, s, g, h: RuleBasedPolicy(p, s, g)),
+        # Spends the whole action budget at random. The gap between this arm and
+        # `recoup` is judgement with volume held constant.
+        ("exhaustive_random",
+         lambda p, s, g, h: exhaustive_random(p, s, g, h, seed=config.seed)),
         ("recoup", lambda p, s, g, h: RecoveryPolicy(p, model, h, s, g, seed=config.seed)),
     ):
         s, h, g = _fresh(pack)

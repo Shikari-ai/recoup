@@ -23,7 +23,7 @@ So the honesty rules this module follows:
    properties of Indian payments. The specific coefficients are *estimates*.
    They are not tuned to make the agent look good, and
    ``recoup/eval/sensitivity.py`` (``python -m recoup sensitivity``) re-runs the
-   whole comparison across 19 perturbed worlds -- including one with every
+   whole comparison across 23 perturbed worlds -- including one with every
    advantage this agent claims stripped out at once -- so the result can be
    shown not to rest on any single setting.
 
