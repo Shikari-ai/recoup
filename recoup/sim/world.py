@@ -22,8 +22,10 @@ So the honesty rules this module follows:
    expired cards never clearing on retry, comms fatigue -- are well-attested
    properties of Indian payments. The specific coefficients are *estimates*.
    They are not tuned to make the agent look good, and
-   ``eval/sensitivity.py`` re-runs the whole comparison across perturbed
-   worlds to show the result is not an artefact of any one setting.
+   ``recoup/eval/sensitivity.py`` (``python -m recoup sensitivity``) re-runs the
+   whole comparison across 19 perturbed worlds -- including one with every
+   advantage this agent claims stripped out at once -- so the result can be
+   shown not to rest on any single setting.
 
 3. **The claim is relative, not absolute.** "Rs 4.1L recovered" is a property
    of this simulation. "38% more recovered than a fixed-schedule retry, under

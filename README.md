@@ -76,6 +76,46 @@ guardrail violations across every seed and arm: 0
 Lift is heavy-tailed — recovered value is dominated by a few large B2B
 receivables — so the full range is reported rather than the best seed.
 
+### It also survives having its assumptions taken away
+
+One simulator is one simulator, so `python -m recoup sensitivity` re-runs the
+whole pipeline across **19 perturbed worlds**: 15.2% median lift, positive in
+**17/19**, zero violations throughout. The two losses are named and explained in
+the output rather than dropped.
+
+The row worth reading is `advantage_stripped` — a world built to falsify this
+project, with *every* edge the agent claims removed at once: no salary cycle,
+almost no issuer outages, no diminishing returns on repetition. The agent should
+collapse toward the rulebook there.
+
+It wins by **+26.2%**, against +15.4% in the baseline world.
+
+The reason is the actual case for learning over rules, and I didn't anticipate
+it. The rulebook **hardcodes** "retry insufficient funds in the salary window."
+In a world where salary timing does nothing, that rule makes it wait weeks for
+no benefit while receivables go stale and hit deadlines. The learned policy
+notices the effect is gone and retries sooner. A hardcoded heuristic cannot tell
+when its own premise has expired; an EV calculation can.
+
+### And it knows when *not* to be used
+
+The learned policy is not unconditionally better. `scripts/learning_curve.py`
+measures how much history it needs first:
+
+| receivables | training rows | median lift vs rulebook | wins |
+|---:|---:|---:|:---:|
+| 500 | 607 | **−14.6%** | 0/3 |
+| 1,000 | 1,206 | +9.5% | 2/3 |
+| 2,000 | 2,453 | +6.6% | **3/3** |
+| 4,000 | 4,895 | +31.1% | 3/3 |
+| 8,000 | 9,645 | +34.6% | 3/3 |
+
+**Below ~2,000 at-risk receivables, ship the rulebook instead.** The model has
+~80 features; on a few hundred rows it fits noise, and the EV arithmetic then
+acts confidently on that noise. The dashboard enforces this rather than hiding
+it — run `recoup serve --events 1500` and it displays a warning that the sample
+is below the model's reliable range and reports the negative lift unsoftened.
+
 > **These numbers come from a simulation, and I will not pretend otherwise.**
 > Recovery outcomes are counterfactual: without a merchant account you cannot
 > observe what *would* have happened. The absolute rupees are a property of my
@@ -162,6 +202,20 @@ nearly halving action count. Every recovery channel has diminishing returns, so
 an action spent early on a marginal move devalues every later one. Restraint
 isn't a safety tax here — it's the strategy.
 
+**And the price of compliance is measured, not asserted.** Because the rules are
+data, you can run the same batch under a conservative risk posture
+(`policies/strict.toml`: 48h notice, Rs 5,000 AFA ceiling, 4 scheme retries, 2
+messages a week, no DND carve-out):
+
+```
+in_default   Rs 1,26,74,966   2,852 actions   901 messages   0 violations
+in_strict    Rs 1,05,11,923   1,370 actions   251 messages   0 violations
+                                    cost of strict: Rs 21,63,043  (17.1%)
+```
+
+That's a number a risk team and a revenue team can actually argue about, which
+is the whole point of putting the rules where both can read them.
+
 **Audit trail** — every decision, veto, execution and outcome appended to a
 SHA-256 hash-chained ledger. Editing, deleting or reordering any record breaks
 verification at that exact sequence number.
@@ -207,7 +261,7 @@ proposed enough violations to be worth testing, then verifies by **independent
 post-hoc replay** that not one got through.
 
 ```bash
-pytest tests/ -q          # 144 passed
+pytest tests/ -q          # 161 passed
 ```
 
 ---
@@ -339,16 +393,17 @@ recoup/
 ├── ledger.py         Hash-chained append-only audit trail
 ├── ingest.py         Razorpay webhooks → RiskEvent, HMAC verified
 ├── sim/              Latent world + generator. Quarantined from the agent
-├── eval/             Discrete-event runner, backtest protocol, reporting
+├── eval/             Runner, backtest protocol, sensitivity, reporting
 ├── llm/              Triage + message composition. Offline by default
 └── api/              Dashboard + live webhook endpoint
 
 policies/in_default.toml   Every compliance limit, as data not code
+policies/strict.toml       A conservative pack — same engine, tighter rules
 docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
-scripts/                   stability.py · tune_model.py · tune_stopping.py
-results/                   committed backtest + 8-seed stability output
-tests/                     144 tests, incl. adversarial + no-leakage
+scripts/                   stability · learning_curve · tune_model · tune_stopping
+results/                   committed backtest, stability, sensitivity, curve output
+tests/                     161 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -359,9 +414,11 @@ python -m recoup backtest --events 6000  # full held-out comparison
 python -m recoup policy                  # print the active compliance pack
 python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
+python -m recoup sensitivity             # 19 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 144 tests
+pytest tests/ -q                         # 161 tests
 python scripts/stability.py --seeds 8    # multi-seed variance
+python scripts/learning_curve.py         # how much data does it need?
 ```
 
 ---
@@ -371,7 +428,11 @@ python scripts/stability.py --seeds 8    # multi-seed variance
 - **Outcomes are simulated.** The mechanisms are real payments behaviour; the
   coefficients are estimates. Only production traffic settles it.
 - **Lift is heavy-tailed.** Dominated by a few large B2B receivables. 8 seeds
-  shows the sign is reliable, not a tight confidence interval.
+  and 19 worlds show the sign is reliable; neither gives a tight confidence
+  interval.
+- **It needs data.** Below ~2,000 receivables it loses to a rulebook, and the
+  crossover was measured on this simulator, so a real merchant's threshold will
+  differ.
 - **I wrote both the world and the agent.** Mitigated by keeping world constants
   qualitative, quarantining them by import (enforced by test), and handing the
   baseline my best insight. A mitigation, not a solution.

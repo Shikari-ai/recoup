@@ -5,6 +5,7 @@
     python -m recoup audit <event>    the full audit trail for one receivable
     python -m recoup verify <file>    check a persisted ledger's hash chain
     python -m recoup triage           classify unmapped error codes
+    python -m recoup sensitivity      does the result survive different assumptions?
     python -m recoup serve            dashboard + webhook API
 
 Everything runs offline with no API key and no configuration.
@@ -167,8 +168,11 @@ def cmd_triage(args: argparse.Namespace) -> int:
         if args.code
         else [(c, d, e) for c, d, e in NOVEL_CODES]
     )
-    svc = TriageService(provider=get_provider(args.provider))
 
+    if args.compare:
+        return _triage_compare(cases)
+
+    svc = TriageService(provider=get_provider(args.provider))
     _p(f"provider: {svc.provider.name}")
     _p()
     _p(f"{'error code':<28}{'table':<12}{'triage':<22}{'conf':>6}  used")
@@ -189,6 +193,77 @@ def cmd_triage(args: argparse.Namespace) -> int:
     _p(f"stats: {svc.stats}")
     _p()
     _p(svc.promote_candidates())
+    return 0
+
+
+def _triage_compare(cases) -> int:
+    """Run the offline provider and the live model on identical inputs.
+
+    The offline provider scores keyword evidence; it cannot read a sentence it
+    has no keywords for. This is the command that shows where that gap is real
+    and where it is not -- which is the honest way to decide whether the model
+    is earning its latency and its dependency.
+    """
+    from .llm.base import get_provider
+    from .llm.triage import TriageService
+
+    stub = TriageService(provider=get_provider("stub"))
+    try:
+        live = TriageService(provider=get_provider("claude"))
+    except Exception as exc:  # noqa: BLE001
+        _p(f"live provider unavailable: {exc}")
+        _p()
+        _p("Comparison needs both providers. Set ANTHROPIC_API_KEY and install")
+        _p("the extra:  pip install -e '.[llm]'")
+        _p("Showing offline results only.")
+        _p()
+        live = None
+
+    hdr = f"{'error code':<28}{'expected':<20}{'stub':<20}{'conf':>6}"
+    if live:
+        hdr += f"  {'claude':<20}{'conf':>6}"
+    _p(hdr)
+    _p("-" * len(hdr))
+
+    agree = disagree = 0
+    for code, desc, expected in cases:
+        _, a = stub.classify(code, desc)
+        line = (
+            f"{code:<28}{(expected.value if expected else '-'):<20}"
+            f"{(a.failure_class.value if a else '-'):<20}"
+            f"{(a.confidence if a else 0):>6.2f}"
+        )
+        if live:
+            _, b = live.classify(code, desc)
+            line += (
+                f"  {(b.failure_class.value if b else '-'):<20}"
+                f"{(b.confidence if b else 0):>6.2f}"
+            )
+            if a and b:
+                if a.failure_class is b.failure_class:
+                    agree += 1
+                else:
+                    disagree += 1
+        _p(line)
+
+    _p()
+    if live:
+        _p(f"agree {agree}, disagree {disagree}")
+        _p(f"stub:   {stub.stats}")
+        _p(f"claude: {live.stats}")
+    else:
+        _p(f"stub: {stub.stats}")
+    return 0
+
+
+def cmd_sensitivity(args: argparse.Namespace) -> int:
+    """Re-run the whole comparison under perturbed world assumptions."""
+    from .eval.sensitivity import run as run_sensitivity
+
+    run_sensitivity(
+        n_events=args.events, days=args.days, seed=args.seed,
+        pack=load_pack(args.policy), verbose=True,
+    )
     return 0
 
 
@@ -251,6 +326,21 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--policy", help="path to a compliance policy pack (.toml)")
     sub = ap.add_subparsers(dest="command", required=True)
 
+    def add_policy_flag(sp: argparse.ArgumentParser) -> None:
+        """Accept --policy after the subcommand as well as before it.
+
+        argparse.SUPPRESS is load-bearing: without it the subparser's default of
+        None would clobber a --policy given before the subcommand, so
+        `recoup --policy strict.toml backtest` would silently run the default
+        pack. Silently running the wrong compliance rules is the worst possible
+        failure mode for this particular flag.
+        """
+        sp.add_argument(
+            "--policy",
+            default=argparse.SUPPRESS,
+            help="path to a compliance policy pack (.toml)",
+        )
+
     b = sub.add_parser("backtest", help="held-out comparison against baselines")
     b.add_argument("--events", type=int, default=6000)
     b.add_argument("--days", type=int, default=45)
@@ -258,12 +348,14 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--ledger", help="write the audit ledger to this JSONL path")
     b.add_argument("--save-model", help="write fitted model weights to this path")
     b.add_argument("--quiet", action="store_true")
+    add_policy_flag(b)
     b.set_defaults(func=cmd_backtest)
 
     d = sub.add_parser("demo", help="walk individual receivables, decision by decision")
     d.add_argument("--events", type=int, default=800)
     d.add_argument("--seed", type=int, default=42)
     d.add_argument("--show", type=int, default=5, help="how many decisions to print")
+    add_policy_flag(d)
     d.set_defaults(func=cmd_demo)
 
     a = sub.add_parser("audit", help="print the audit trail for one receivable")
@@ -279,16 +371,34 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--code", help="a single error code to classify")
     t.add_argument("--description", help="the accompanying error description")
     t.add_argument("--provider", default=None, help="stub (default) or claude")
+    t.add_argument(
+        "--compare", action="store_true",
+        help="run the offline provider and the live model side by side",
+    )
     t.set_defaults(func=cmd_triage)
+
+    n = sub.add_parser(
+        "sensitivity",
+        help="re-run the comparison across perturbed worlds (does the result hold?)",
+    )
+    n.add_argument("--events", type=int, default=2500)
+    n.add_argument("--days", type=int, default=45)
+    n.add_argument("--seed", type=int, default=42)
+    add_policy_flag(n)
+    n.set_defaults(func=cmd_sensitivity)
 
     s = sub.add_parser("serve", help="run the dashboard and webhook API")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8000)
     s.add_argument("--seed", type=int, default=42)
-    s.add_argument("--events", type=int, default=2000)
+    # Default above the ~2,000 crossover documented in
+    # scripts/learning_curve.py. Below it the learned policy genuinely loses to
+    # the rulebook, and the dashboard says so rather than hiding it.
+    s.add_argument("--events", type=int, default=4000)
     s.set_defaults(func=cmd_serve)
 
     p = sub.add_parser("policy", help="print the active compliance pack")
+    add_policy_flag(p)
     p.set_defaults(func=cmd_policy)
 
     return ap
@@ -296,6 +406,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if not hasattr(args, "policy"):
+        args.policy = None
     try:
         return args.func(args)
     except KeyboardInterrupt:

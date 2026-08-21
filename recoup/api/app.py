@@ -29,7 +29,7 @@ from ..domain import rupees
 from ..policypack import load_pack
 
 
-def build_app(seed: int = 42, events: int = 2000):  # noqa: C901 - wiring
+def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
     from fastapi import FastAPI, Header, Request
     from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -113,6 +113,15 @@ def build_app(seed: int = 42, events: int = 2000):  # noqa: C901 - wiring
                     for p, a, n in r.model_report.bins
                     if n
                 ],
+            },
+            # The learning curve (scripts/learning_curve.py) puts the reliable
+            # crossover at ~2,000 receivables. Below it the propensity model
+            # cannot fit its ~80 features and a rulebook is the better choice.
+            # Surfacing that on the dashboard rather than quietly sizing the
+            # demo above it is the difference between a product and a pitch.
+            "envelope": {
+                "reliable_min_events": 2000,
+                "below_crossover": r.config.n_events < 2000,
             },
             "compliance": {
                 "pack": r.pack_name,

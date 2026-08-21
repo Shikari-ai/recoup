@@ -217,7 +217,7 @@ class LogisticModel:
     # Defaults chosen by a grid search on a *separate* tuning scenario
     # (seed 7), never on the seed the README reports. Tuning on the reported
     # test set is the most common way an honest-looking backtest becomes
-    # dishonest. See scripts/tune.py.
+    # dishonest. See scripts/tune_model.py.
     l2: float = 1e-4
     lr: float = 0.35
     epochs: int = 40

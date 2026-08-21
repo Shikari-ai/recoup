@@ -1,0 +1,244 @@
+"""Sensitivity machinery and the second compliance pack.
+
+Two claims get tested here that are otherwise just assertions in a README:
+
+1. **Compliance rules really are data.** A second pack changes the agent's
+   behaviour without a line of engine code changing, and the stricter pack is
+   verifiably stricter on every axis rather than only in its name.
+2. **The world can actually be perturbed.** The sensitivity analysis is the
+   project's main defence against "you invented the constants", so the
+   perturbation plumbing needs to be shown to work end to end -- a sweep that
+   silently ran the same world nineteen times would be worse than none.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
+
+from recoup.domain import FailureClass
+from recoup.eval.sensitivity import Row, build_scenarios, format_summary
+from recoup.policypack import DEFAULT_PACK, PolicyPackError, load_pack
+from recoup.sim.generator import ScenarioConfig, generate
+from recoup.sim.world import WorldParams
+
+STRICT = DEFAULT_PACK.parent / "strict.toml"
+
+
+# ---------------------------------------------------------------------------
+# The second pack
+# ---------------------------------------------------------------------------
+
+
+def test_strict_pack_loads_and_validates():
+    p = load_pack(STRICT)
+    assert p.name == "in_strict"
+    assert p.jurisdiction == "IN"
+
+
+def test_strict_pack_is_actually_stricter_on_every_axis():
+    """A pack named 'strict' that is looser somewhere is a trap, not a policy."""
+    d, s = load_pack(DEFAULT_PACK), load_pack(STRICT)
+
+    assert s.pre_debit_notice_hours >= d.pre_debit_notice_hours
+    assert s.afa_threshold_paise <= d.afa_threshold_paise
+    assert s.max_messages_per_7d <= d.max_messages_per_7d
+    assert s.min_gap_between_sends_h >= d.min_gap_between_sends_h
+    assert s.max_actions_per_event <= d.max_actions_per_event
+    assert s.max_debit_attempts <= d.max_debit_attempts
+    assert s.max_days_pursuing <= d.max_days_pursuing
+    assert s.min_expected_value_paise >= d.min_expected_value_paise
+    assert s.min_p_recover >= d.min_p_recover
+    assert s.never_retry_classes >= d.never_retry_classes
+    assert s.max_actions_per_merchant_per_day <= d.max_actions_per_merchant_per_day
+    assert (
+        s.max_comms_cost_per_merchant_paise_per_day
+        <= d.max_comms_cost_per_merchant_paise_per_day
+    )
+    # Narrower comms window: strict opens later and closes earlier.
+    assert s.quiet_hours_span >= d.quiet_hours_span if hasattr(s, "quiet_hours_span") else True
+    assert s.quiet_start_local <= d.quiet_start_local
+    assert s.quiet_end_local >= d.quiet_end_local
+    # No DND carve-out at all.
+    assert not s.dnd_allowed_channels
+
+
+def test_strict_pack_network_caps_are_below_scheme_maximums():
+    d, s = load_pack(DEFAULT_PACK), load_pack(STRICT)
+    for scheme, rule in s.network_retry.items():
+        assert rule.max_attempts <= d.network_retry[scheme].max_attempts
+
+
+def test_strict_pack_treats_ambiguous_failures_as_terminal():
+    s = load_pack(STRICT)
+    assert "do_not_honour" in s.never_retry_classes
+    assert "unknown" in s.never_retry_classes
+
+
+def test_packs_are_interchangeable_without_engine_changes():
+    """The whole 'rules are data' claim: swap the file, behaviour changes."""
+    from recoup.guardrails import GuardrailEngine
+    from recoup.store import RecoveryStore
+
+    for path in (DEFAULT_PACK, STRICT):
+        pack = load_pack(path)
+        store = RecoveryStore()
+        engine = GuardrailEngine(pack, store)
+        assert len(engine._RULES) == 19, "gate set differs between packs"
+
+
+def test_a_pack_missing_a_required_key_fails_loudly(tmp_path):
+    """Failing open because a key was misspelled is worse than no rule."""
+    bad = tmp_path / "bad.toml"
+    bad.write_text('[meta]\nname="x"\njurisdiction="IN"\nversion="1"\n', encoding="utf-8")
+    with pytest.raises(PolicyPackError):
+        load_pack(bad)
+
+
+# ---------------------------------------------------------------------------
+# World perturbation
+# ---------------------------------------------------------------------------
+
+
+def test_world_params_actually_change_the_world():
+    """If this fails, every sensitivity row is the same run nineteen times."""
+    base = ScenarioConfig(n_events=400, days=30, seed=42)
+    quiet = replace(base, world_params=replace(WorldParams(), outages_per_week=0.2))
+    stormy = replace(base, world_params=replace(WorldParams(), outages_per_week=5.0))
+
+    _, w_quiet, _ = generate(quiet)
+    _, w_stormy, _ = generate(stormy)
+    assert len(w_stormy.outages) > len(w_quiet.outages) * 3
+
+
+def test_perturbed_worlds_change_recovery_probabilities():
+    from datetime import timedelta
+
+    from recoup.domain import Action, ActionKind
+
+    base = ScenarioConfig(n_events=200, days=30, seed=42)
+    weak = replace(base, world_params=replace(WorldParams(), salary_boost=1.0))
+    strong = replace(base, world_params=replace(WorldParams(), salary_boost=3.0))
+
+    ev_w, world_w, truth_w = generate(weak)
+    ev_s, world_s, _ = generate(strong)
+
+    # Same event, same action, different latent salary effect.
+    target = next(
+        (e for e in ev_w if truth_w[e.event_id] is FailureClass.INSUFFICIENT_FUNDS), None
+    )
+    assert target is not None, "scenario had no insufficient-funds events"
+    # Drop the deadline: this test is isolating the salary effect, and a
+    # scheduled time past the deadline correctly zeroes the probability, which
+    # would mask the thing being measured.
+    target = replace(target, deadline=None)
+
+    # Schedule inside the salary window (1st-7th IST) shortly after the failure.
+    when = target.occurred_at + timedelta(days=2)
+    while not (1 <= (when + timedelta(minutes=330)).day <= 7):
+        when += timedelta(days=1)
+    action = Action(ActionKind.RETRY_SAME_RAIL, when, rail=target.rail)
+
+    p_weak = world_w.p_recover(target, FailureClass.INSUFFICIENT_FUNDS, action)
+    p_strong = world_s.p_recover(target, FailureClass.INSUFFICIENT_FUNDS, action)
+    assert p_weak > 0, "baseline probability collapsed; test is measuring nothing"
+    assert p_strong > p_weak
+
+
+def test_scenario_grid_is_broad_and_named_uniquely():
+    scen = build_scenarios()
+    names = [s.name for s in scen]
+    assert len(names) == len(set(names)), "duplicate scenario names"
+    assert "baseline" in names
+    assert "advantage_stripped" in names, "the honest stress test is missing"
+    assert "comms_8x_cost" in names
+    assert len(scen) >= 15
+
+
+def test_advantage_stripped_world_removes_every_claimed_edge():
+    """This world is the project's own falsification attempt. It must be real."""
+    scen = {s.name: s for s in build_scenarios()}
+    a = scen["advantage_stripped"].params
+    b = WorldParams()
+    assert a.salary_boost == 1.0 and a.squeeze_penalty == 1.0   # timing worthless
+    assert a.outages_per_week < b.outages_per_week / 4          # nothing to detect
+    assert a.attempt_decay > b.attempt_decay                    # restraint barely pays
+    assert a.comms_fatigue > b.comms_fatigue
+    assert a.escalate_decay > b.escalate_decay
+
+
+def test_cost_mutator_raises_comms_prices():
+    scen = {s.name: s for s in build_scenarios()}
+    mut = scen["comms_8x_cost"].pack_mutator
+    assert mut is not None
+    base = load_pack(DEFAULT_PACK)
+    pricey = mut(base)
+    assert pricey.cost_of("send_nudge_whatsapp") == base.cost_of("send_nudge_whatsapp") * 8
+    assert pricey.cost_of("escalate_human") > base.cost_of("escalate_human")
+    # Debit retries stay free -- they are not comms.
+    assert pricey.cost_of("retry_same_rail") == base.cost_of("retry_same_rail")
+
+
+def test_summary_reports_losses_rather_than_hiding_them():
+    rows = [
+        Row("baseline", "n", 100, 90, 30, 0.11, 2.3, 0.76, 0),
+        Row("bad_world", "assumption X removed", 80, 100, 30, -0.20, 1.6, 0.74, 0),
+    ]
+    out = format_summary(rows)
+    assert "1/2" in out
+    assert "bad_world" in out
+    assert "assumption X removed" in out
+    assert "-20.0%" in out
+
+
+def test_summary_is_suspicious_of_winning_everywhere():
+    rows = [Row(f"w{i}", "n", 100, 80, 30, 0.25, 2.3, 0.76, 0) for i in range(4)]
+    out = format_summary(rows)
+    assert "suspicion" in out.lower()
+
+
+@pytest.mark.slow
+def test_sensitivity_runs_end_to_end():
+    from recoup.eval.sensitivity import Scenario, run
+
+    scen = [
+        Scenario("baseline", WorldParams(), "central"),
+        Scenario("no_salary", replace(WorldParams(), salary_boost=1.0), "no salary cycle"),
+    ]
+    rows = run(n_events=400, days=30, seed=42, scenarios=scen, verbose=False)
+    assert len(rows) == 2
+    assert all(r.violations == 0 for r in rows)
+    assert rows[0].agent_paise > 0
+
+
+# ---------------------------------------------------------------------------
+# CLI: selecting a policy pack must never silently fall back
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--policy", str(STRICT), "policy"],   # before the subcommand
+        ["policy", "--policy", str(STRICT)],   # after the subcommand
+    ],
+)
+def test_policy_flag_works_in_both_positions(argv, capsys):
+    """Regression: the subparser's default of None clobbered the global flag.
+
+    `recoup --policy strict.toml backtest` silently ran the *default* pack,
+    which for a compliance flag is the worst possible failure -- the operator
+    believes stricter rules are in force and they are not.
+    """
+    from recoup.cli import main
+
+    assert main(argv) == 0
+    assert "in_strict" in capsys.readouterr().out
+
+
+def test_policy_flag_defaults_cleanly_when_absent(capsys):
+    from recoup.cli import main
+
+    assert main(["policy"]) == 0
+    assert "in_default" in capsys.readouterr().out

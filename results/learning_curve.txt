@@ -1,0 +1,19 @@
+learning curve: 5 sizes x 3 seeds
+
+  events  train rows               vs rulebook             AUC   wins
+                        median     min     max  median     min       
+----------------------------------------------------------------------
+     500         607    -14.6%  -31.6%   -7.5%   0.743   0.687   0/3
+   1,000       1,206      9.5%   -6.4%   31.3%   0.750   0.727   2/3
+   2,000       2,453      6.6%    2.4%   18.1%   0.764   0.746   3/3
+   4,000       4,895     31.1%   20.9%   41.6%   0.767   0.753   3/3
+   8,000       9,645     34.6%   10.6%   38.1%   0.771   0.763   3/3
+----------------------------------------------------------------------
+
+Reliable crossover: ~2,000 at-risk receivables (~2,453 training rows),
+where the agent wins on every seed with median lift +6.6%.
+
+Below the crossover, a hand-written rulebook is the better choice, and
+the honest recommendation is to ship the rulebook and collect data.
+The model needs enough (action, outcome) pairs to fit ~80 features;
+under that it is fitting noise and the EV arithmetic acts on it.

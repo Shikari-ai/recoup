@@ -34,7 +34,7 @@ from ..domain import (
     RiskEvent,
     RiskKind,
 )
-from .world import World
+from .world import World, WorldParams
 
 ISSUERS = [
     "HDFC", "ICICI", "SBI", "AXIS", "KOTAK",
@@ -186,6 +186,10 @@ class ScenarioConfig:
     novel_code_rate: float = 0.03
     dnd_rate: float = 0.12
     start: datetime | None = None
+    #: Perturbed latent-world constants. Used by eval/sensitivity.py to re-run
+    #: the whole comparison under different assumptions about how payments
+    #: behave, so a result can be shown not to depend on any one setting.
+    world_params: WorldParams | None = None
 
 
 def _weighted(rng: random.Random, weights: dict) -> object:
@@ -238,7 +242,9 @@ def generate(config: ScenarioConfig, world: World | None = None) -> tuple[list[R
     """
     rng = random.Random(config.seed)
     start = config.start or datetime(2026, 6, 1, 0, 0, tzinfo=timezone.utc)
-    w = world or World(seed=config.seed, start=start, days=config.days)
+    w = world or World(
+        seed=config.seed, params=config.world_params, start=start, days=config.days
+    )
 
     # Sorted, not a set: Rail is a str Enum, so set iteration order is
     # hash-randomised per process. Feeding that order into the outage RNG

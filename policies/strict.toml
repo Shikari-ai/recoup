@@ -1,0 +1,115 @@
+#
+# Recoup compliance policy pack -- STRICT
+#
+# A conservative risk team's version of policies/in_default.toml. Every limit is
+# tightened; nothing in the engine changes. This file exists to make the
+# "compliance rules are data, not code" claim demonstrable rather than asserted:
+#
+#     python -m recoup backtest --policy policies/in_default.toml
+#     python -m recoup backtest --policy policies/strict.toml
+#
+# The difference between those two numbers is the rupee cost of the stricter
+# posture. That is a number a risk team and a revenue team can actually argue
+# about, which is the entire point of putting the rules somewhere both of them
+# can read.
+#
+# Same honesty note as the default pack applies: these values encode publicly
+# documented requirements as understood at authoring time, and are a starting
+# configuration rather than a compliance certification. Confirm against current
+# circulars and your acquirer's rulebook before production use.
+#
+
+[meta]
+name         = "in_strict"
+jurisdiction = "IN"
+version      = "2026.08"
+description  = "Conservative India pack: tighter scheme caps, 48h notice, lower AFA ceiling, narrower comms window."
+
+# ---------------------------------------------------------------------------
+# Card-network retry caps.
+# Well below scheme maximums, on the view that approaching a limit you can be
+# fined for is itself the risk.
+# ---------------------------------------------------------------------------
+[network_retry.visa]
+max_attempts  = 4
+window_days   = 30
+applies_to    = ["card", "card_token"]
+
+[network_retry.mastercard]
+max_attempts  = 4
+window_days   = 35
+applies_to    = ["card", "card_token"]
+
+[network_retry.default]
+max_attempts  = 3
+window_days   = 35
+applies_to    = ["card", "card_token"]
+
+# ---------------------------------------------------------------------------
+# RBI e-mandate.
+# 48h notice rather than the 24h minimum, and the AFA ceiling held at the older
+# Rs 5,000 level rather than the current higher threshold -- a deliberately
+# conservative reading for merchants who would rather route to a
+# customer-present flow than argue about a carve-out later.
+# ---------------------------------------------------------------------------
+[emandate]
+pre_debit_notice_hours = 48
+afa_threshold_paise    = 500000           # Rs 5,000
+applies_to             = ["upi_autopay", "emandate_nach", "card_token"]
+
+# ---------------------------------------------------------------------------
+# Communications.
+# Narrower window, fewer messages, longer gaps, and no DND carve-out at all:
+# a DND-registered customer is not contacted on any channel, including email.
+# ---------------------------------------------------------------------------
+[comms]
+quiet_hours_start_local = 20               # 20:00 IST
+quiet_hours_end_local   = 10               # 10:00 IST
+timezone_offset_minutes = 330
+max_messages_per_7d     = 2
+min_gap_between_sends_h = 36
+dnd_blocked_channels    = ["sms", "voice", "whatsapp", "email"]
+dnd_allowed_channels    = []
+
+# ---------------------------------------------------------------------------
+# Stopping rules.
+# ---------------------------------------------------------------------------
+[stopping]
+max_actions_per_event      = 2
+max_debit_attempts         = 2
+max_days_pursuing          = 10
+min_expected_value_paise   = 20000         # Rs 200.00 -- only chase real money
+min_p_recover              = 0.08
+# Two additions over the default pack: an issuer's catch-all decline and any
+# unmapped failure are both treated as terminal here, rather than as something
+# worth one careful attempt.
+never_retry_classes = [
+  "mandate_revoked",
+  "risk_declined",
+  "suspected_fraud",
+  "do_not_honour",
+  "unknown",
+]
+
+# ---------------------------------------------------------------------------
+# Spend and blast radius.
+# ---------------------------------------------------------------------------
+[budget]
+max_actions_per_merchant_per_day = 500
+max_comms_cost_per_merchant_paise_per_day = 100000   # Rs 1,000
+
+[budget.action_cost_paise]
+retry_same_rail           = 0
+retry_alt_rail            = 0
+send_nudge_sms            = 20
+send_nudge_whatsapp       = 85
+send_nudge_email          = 2
+send_nudge_voice          = 300
+send_payment_link         = 20
+request_instrument_update = 20
+escalate_human            = 5000
+wait                      = 0
+stop                      = 0
+
+[killswitch]
+enabled = false

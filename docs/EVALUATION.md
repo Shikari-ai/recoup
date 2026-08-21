@@ -38,9 +38,11 @@ is production-shaped; the evidence that it *works* is not production evidence.
 **Not claimed:** "Recoup recovers Rs 1.1 crore."
 
 **Claimed:** *Under identical events, identical guardrails, identical action
-costs and identical random draws, an EV-ranked policy recovered a median 34%
+costs and identical random draws, an EV-ranked policy recovered a median 30.5%
 more attributed value than a strong hand-written rulebook across 8 independent
-scenarios, while executing zero guardrail violations.*
+scenarios (positive in 8/8), and a median 15.2% more across 19 perturbed worlds
+(positive in 17/19) — while executing zero guardrail violations in every run,
+and only above a measured data threshold of ~2,000 receivables.*
 
 The second is a statement about **decision logic**, which is what transfers.
 The first is a statement about my random number generator.
@@ -116,11 +118,18 @@ meaning what it claims.
 python scripts/stability.py --seeds 8 --events 4000
 ```
 
-Reported in `artifacts_stability.txt`. The distribution matters more than any
+Reported in `results/stability_8_seeds.txt`. The distribution matters more than any
 single figure: **lift is heavy-tailed**, because recovered value is dominated by
-a small number of large B2B receivables. One scenario in eight is negative. A
-project quoting only its best seed would be lying by selection, so the range and
-the loss are reported alongside the median.
+a small number of large B2B receivables, so the spread is wide (min +5.3%, max
++57.3%) even though every seed is positive. A project quoting only its best seed
+would be lying by selection, so the full range is reported alongside the median:
+
+```
+lift vs rule_based    median +30.5%   mean +30.7%   min +5.3%   max +57.3%
+lift vs fixed_retry   median +291.5%  mean +284.9%  min +198.7% max +374.6%
+pooled (all seeds)    +28.8%          wins 8/8 seeds
+guardrail violations across every seed and arm: 0
+```
 
 ### The baseline is deliberately strong
 
@@ -147,6 +156,91 @@ An earlier version of that baseline could not escalate at all, and the agent
 "beat" it by +394% — 64% of which came from one action the baseline could not
 take. That was measuring action spaces, not decision quality. See
 `ENGINEERING_LOG.md` §3.
+
+### Operating envelope: how much history does this need?
+
+The learned policy is not unconditionally better than a rulebook. It needs data,
+and `scripts/learning_curve.py` measures how much:
+
+```
+  events  train rows      vs rulebook (median / min / max)    AUC   wins
+     500         607     -14.6%   -31.6%    -7.5%          0.743   0/3
+   1,000       1,206      +9.5%    -6.4%   +31.3%          0.750   2/3
+   2,000       2,453      +6.6%    +2.4%   +18.1%          0.764   3/3
+   4,000       4,895     +31.1%   +20.9%   +41.6%          0.767   3/3
+   8,000       9,645     +34.6%   +10.6%   +38.1%          0.771   3/3
+```
+
+**Below roughly 2,000 at-risk receivables (~2,500 training rows), the rulebook
+is the better product.** The propensity model has ~80 features; with a few
+hundred rows it fits noise, and the EV arithmetic then acts confidently on that
+noise — which is worse than not learning at all.
+
+The honest recommendation for a small merchant is therefore: ship the rulebook,
+collect history, switch when you cross the threshold. The dashboard enforces
+this rather than hiding it — run `recoup serve --events 1500` and it displays a
+warning that the sample is below the model's reliable range, and reports the
+negative lift without softening it.
+
+### Robustness: does the result survive different assumptions?
+
+The strongest objection to this project is that I wrote both the simulator and
+the agent. `python -m recoup sensitivity` answers it with evidence: the entire
+pipeline re-runs under 19 perturbed worlds.
+
+```
+worlds tested            19
+agent beats rulebook in  17/19
+lift vs rulebook         median +15.2%   min -4.1%   max +30.4%
+guardrail violations     0  (across every world)
+
+worlds where the agent does NOT win, and why:
+    -4.1%  salary_strong          salary cycle dominates liquidity
+    -2.7%  escalate_decay_fast    repeat escalations nearly worthless
+```
+
+Both losses are legible, and both are the *right* result. When the salary effect
+is enormous, the rulebook's hardcoded salary rule is close to optimal and the
+model's learned version is a noisier approximation of it. When repeat
+escalations are worthless, "escalate once then stop" is simply the correct
+policy and there is nothing to learn.
+
+**The most interesting row is `advantage_stripped`** — a world built to
+falsify this project, with every edge the agent claims removed at once: no
+salary cycle, almost no issuer outages, and no diminishing returns on
+repetition. The agent should collapse toward the rulebook there.
+
+It wins by **+26.2%**, more than the +15.4% baseline.
+
+The reason is the actual argument for learning over rules, and I did not
+anticipate it. The rulebook *hardcodes* "retry insufficient funds in the salary
+window". In a world where salary timing does nothing, that rule makes it wait
+weeks for no benefit while receivables go stale and hit their deadlines. The
+learned policy observes that the effect is gone and retries sooner.
+
+So the lift is not primarily coming from the clever heuristics I built the
+feature set around. It comes from the EV arithmetic adapting when an assumption
+stops holding — which is precisely the failure mode a hand-written rulebook
+cannot detect, because a hardcoded heuristic has no way of noticing that its
+premise has expired.
+
+### The cost of stricter compliance, measured
+
+Because the rules are data, the price of a conservative posture is measurable
+rather than argued about. `policies/strict.toml` tightens every limit — 48h
+pre-debit notice, Rs 5,000 AFA ceiling, 4 scheme retries, 2 messages per week,
+2 actions per receivable, no DND carve-out, `do_not_honour` and `unknown`
+treated as terminal:
+
+```
+in_default   Rs 1,26,74,966   2,852 actions   901 messages   0 violations
+in_strict    Rs 1,05,11,923   1,370 actions   251 messages   0 violations
+
+cost of the strict pack: Rs 21,63,043  (17.1% of recovered value)
+```
+
+That is a number a risk team and a revenue team can hold a real conversation
+about, which is the entire point of putting the rules where both can read them.
 
 ### Model quality
 
