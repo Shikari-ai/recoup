@@ -1,0 +1,31 @@
+Mutation spot-check: every row SHOULD be caught (the suite turns red).
+
+  #  result     mutation
+------------------------------------------------------------------------------
+  1  caught     disable the never-retry gate (terminal failures become actionable)
+                FAILED tests/test_adversarial.py::test_auditor_detects_a_planted_t
+  2  caught     disable quiet hours (3am messages allowed)
+                FAILED tests/test_adversarial.py::test_adversarial_respects_quiet_
+  3  caught     raise the debit cap 100x
+                FAILED tests/test_guardrails.py::test_debit_cap_binds_independentl
+  4  caught     skip the RBI pre-debit notice requirement
+                FAILED tests/test_adversarial.py::test_adversarial_policy_executes
+  5  caught     stop detecting edited ledger payloads
+                FAILED tests/test_cli.py::test_verify_rejects_a_tampered_chain
+  6  caught     stop detecting spliced ledger entries (valid seq, broken back-link)
+                FAILED tests/test_ledger_and_taxonomy.py::test_prev_hash_break_is_
+  7  caught     remove the terminal short-circuit in the policy
+                FAILED tests/test_policy.py::test_terminal_decisions_explain_thems
+  8  caught     disable idempotency (a replayed debit executes twice)
+                FAILED tests/test_idempotency.py::test_first_claim_succeeds_and_se
+  9  caught     accept any webhook signature
+                FAILED tests/test_api.py::test_webhook_enforces_the_signature_when
+ 10  caught     stop blocking credential solicitation in customer messages
+                FAILED tests/test_llm.py::test_banned_content_is_rejected[Please s
+ 11  caught     ignore the LLM triage confidence floor
+                FAILED tests/test_llm.py::test_low_confidence_is_rejected_and_stay
+------------------------------------------------------------------------------
+
+11/11 mutations caught
+
+Every safety-critical mutation was caught.

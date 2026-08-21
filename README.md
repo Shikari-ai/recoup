@@ -458,6 +458,36 @@ Honestly: this is tamper-**evident**, not tamper-**proof**. Anyone who can
 rewrite the file can recompute the chain. `head()` exposes exactly the value
 you would anchor in a WORM bucket to close that gap.
 
+### The tests are checked too
+
+319 tests at 95% coverage is a statement about lines executed, not about whether
+a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
+question: it disables one safety-critical behaviour at a time in a scratch copy
+and runs the suite. Every mutation should turn it red.
+
+```
+11/11 mutations caught
+  disable the never-retry gate ............ caught
+  disable quiet hours ..................... caught
+  raise the debit cap 100x ................ caught
+  skip the RBI pre-debit notice ........... caught
+  stop detecting edited ledger payloads ... caught
+  stop detecting spliced ledger entries ... caught
+  remove the terminal short-circuit ....... caught
+  disable idempotency ..................... caught
+  accept any webhook signature ............ caught
+  stop blocking credential solicitation ... caught
+  ignore the triage confidence floor ...... caught
+```
+
+It got there by finding three that **survived** the first run, and the most
+useful was the ledger. Disabling the back-link check changed nothing, because
+the only reordering test also broke sequence numbering — and the sequence check
+fires first. A splice with valid sequence numbers would have verified as intact,
+and the tamper-evidence claim would have been half-true. Full account in
+[results/mutation.txt](results/mutation.txt) and
+[ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md).
+
 ### The zero-violation claim is not vacuous
 
 A careful policy producing zero violations proves nothing. So
@@ -610,7 +640,8 @@ docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
 scripts/                   stability · learning_curve · ablation · sensitivity
                            health_signal · tune_* · verify_docs · verify_numbers
-results/                   committed backtest, stability, sensitivity, curve output
+results/                   backtest · stability · sensitivity · curve · ceiling
+                           ablation · health-signal · mutation output
 tests/                     227 tests, incl. adversarial + no-leakage
 ```
 
