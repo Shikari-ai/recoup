@@ -65,6 +65,27 @@ violations · classification 99.0% end-to-end with terminal recall 1.000.**
 On the model itself: **AUC 0.777, ECE 0.012**, against a measured oracle ceiling
 of **0.778** — see below, because that ceiling is the whole point.
 
+### Everything, in one table
+
+The sections that follow are the evidence behind each row. If you only read one
+thing, read this — including the last two rows, which are the ones that would
+stop me deploying it.
+
+| Question a reviewer would ask | Answer | Where it is measured |
+|---|---|---|
+| Does it beat what merchants run today? | **+286.6%** vs fixed retry | `results/backtest_seed42.txt` |
+| Does it beat a *good engineer's* rulebook? | **+31.1%**, positive on 8/8 seeds | `scripts/stability.py` |
+| Is that judgment, or just doing more? | **+49.6%** vs same-budget-random | `exhaustive_random` arm |
+| Is the ML earning its place? | **+57.8%** over the same system, model off | `scripts/ablation.py` |
+| Is the model any good? | 93.2% of a measured oracle ceiling | `scripts/ceiling.py` |
+| Are the probabilities trustworthy? | ECE **0.012** | held-out probe |
+| Does it classify failures correctly? | **99.0%** end-to-end | table + LLM triage |
+| Could it debit someone it shouldn't? | terminal recall **1.000**, 0 dangerous errors | `eval/classifier.py` |
+| Does it ever break a compliance rule? | **0** violations, verified by independent replay | `tests/test_adversarial.py` |
+| Does it hold if your assumptions differ? | 23/23 perturbed worlds | `recoup sensitivity` |
+| **When should you _not_ use it?** | **Below ~300 receivables — ship a rulebook** | `scripts/learning_curve.py` |
+| **What is not real here?** | **Outcomes are simulated. The comparison is the claim.** | `docs/EVALUATION.md` |
+
 ### Is that judgment, or just effort?
 
 A policy can out-recover a rulebook for two very different reasons: it chooses
