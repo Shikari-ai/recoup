@@ -22,7 +22,23 @@ import json
 import os
 from typing import Any
 
-from .base import LLMResponse, ProviderConfig
+from .base import LLMResponse, ProviderConfig, ProviderUnavailable
+
+#: Told to an operator who asked for the live model without the setup for it.
+#: Both messages lead with the zero-config path, because that is almost always
+#: what the person actually wants: the system runs fully without either.
+_NO_API_KEY = """ANTHROPIC_API_KEY is not set.
+  The offline provider is the default and needs no key:
+      python -m recoup demo
+  To use the live model instead, export a key and retry:
+      export ANTHROPIC_API_KEY=sk-ant-..."""
+
+_NO_PACKAGE = """the 'anthropic' package is not installed.
+  The offline provider is the default and needs no install:
+      python -m recoup demo
+  To use the live model instead:
+      pip install 'recoup[llm]'"""
+
 
 
 class ClaudeProvider:
@@ -34,18 +50,11 @@ class ClaudeProvider:
         self.config = config or ProviderConfig()
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            raise RuntimeError(
-                "ANTHROPIC_API_KEY is not set. Either export it, or run with the "
-                "offline provider (the default): RECOUP_LLM=stub"
-            )
+            raise ProviderUnavailable(_NO_API_KEY)
         try:
             import anthropic
         except ImportError as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError(
-                "the 'anthropic' package is not installed. Either "
-                "`pip install recoup[llm]`, or use the offline provider "
-                "(the default): RECOUP_LLM=stub"
-            ) from exc
+            raise ProviderUnavailable(_NO_PACKAGE) from exc
         self._client = anthropic.Anthropic(api_key=api_key, timeout=self.config.timeout_s)
 
     def complete(

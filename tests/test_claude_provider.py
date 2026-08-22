@@ -247,3 +247,46 @@ def test_a_working_provider_resolves_through_triage(anthropic_module):
     assert sug.accepted
     assert cls.failure_class is FailureClass.ISSUER_DOWN
     assert cls.provenance.startswith("llm:claude:conf=")
+
+
+# ---------------------------------------------------------------------------
+# Missing configuration is a configuration error, not a crash
+# ---------------------------------------------------------------------------
+
+
+def test_provider_unavailable_is_a_runtime_error():
+    """Narrowing the type must not break callers that catch RuntimeError.
+
+    `_triage_compare` catches broadly and degrades to offline-only; that path is
+    what a reviewer without a key actually hits, and it must keep working.
+    """
+    from recoup.llm.base import ProviderUnavailable
+
+    assert issubclass(ProviderUnavailable, RuntimeError)
+
+
+def test_missing_key_names_the_zero_config_path_first(monkeypatch):
+    """The message has to be a fix, not a diagnosis.
+
+    Most people who trip this wanted the system to run, not the live model
+    specifically -- so the first line they read should be the command that
+    works with no key at all.
+    """
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    from recoup.llm.base import ProviderUnavailable
+    from recoup.llm.claude import ClaudeProvider
+
+    with pytest.raises(ProviderUnavailable) as exc:
+        ClaudeProvider(ProviderConfig())
+
+    msg = str(exc.value)
+    assert "python -m recoup demo" in msg, "no runnable no-key command offered"
+    assert "export ANTHROPIC_API_KEY" in msg, "no way to opt in to the live path"
+    assert msg.index("recoup demo") < msg.index("export ANTHROPIC_API_KEY")
+
+
+def test_unknown_provider_name_uses_the_same_type():
+    from recoup.llm.base import ProviderUnavailable, get_provider
+
+    with pytest.raises(ProviderUnavailable, match="expected 'stub' or 'claude'"):
+        get_provider("gpt4")

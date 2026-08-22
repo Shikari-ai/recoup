@@ -61,6 +61,16 @@ class ProviderConfig:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+class ProviderUnavailable(RuntimeError):
+    """A provider was asked for but its configuration is missing.
+
+    A subclass of ``RuntimeError`` so existing callers keep working, but narrow
+    enough that the CLI can print it as a one-line fix instead of a traceback.
+    An operator who forgot an env var has a configuration problem, not a bug,
+    and the output should say which one it is.
+    """
+
+
 def get_provider(name: str | None = None, config: ProviderConfig | None = None) -> Provider:
     """Resolve a provider.
 
@@ -79,4 +89,6 @@ def get_provider(name: str | None = None, config: ProviderConfig | None = None) 
         from .claude import ClaudeProvider
 
         return ClaudeProvider(config or ProviderConfig())
-    raise ValueError(f"unknown LLM provider {choice!r}; expected 'stub' or 'claude'")
+    raise ProviderUnavailable(
+        f"unknown LLM provider {choice!r}; expected 'stub' or 'claude'"
+    )

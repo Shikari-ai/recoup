@@ -430,12 +430,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .llm.base import ProviderUnavailable
+
     _configure_stdout()
     args = build_parser().parse_args(argv)
     if not hasattr(args, "policy"):
         args.policy = None
     try:
         return args.func(args)
+    except ProviderUnavailable as exc:
+        # A missing env var is a configuration problem, not a crash. Printing a
+        # traceback for it buries the one line that actually fixes the problem.
+        _p(f"error: {exc}")
+        return 2
     except KeyboardInterrupt:
         _p("\ninterrupted")
         return 130

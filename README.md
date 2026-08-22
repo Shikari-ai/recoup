@@ -681,9 +681,13 @@ python scripts/mutate.py                 # do the tests catch a broken guardrail
 - **I wrote both the world and the agent.** Mitigated by keeping world constants
   qualitative, quarantining them by import (enforced by test), and handing the
   baseline my best insight. A mitigation, not a solution.
-- **The live Claude path is written, reviewed and tested against a fake
-  provider, but never executed** — no API key was available. I won't claim it
-  works until it has run.
+- **The live Claude path has never made a real API call.** No key was
+  available, and the offline provider is the default for that reason. Its
+  *contract* is fully tested against a fake client — 13 tests covering forced
+  tool-use, tool-block extraction, and every degradation path (timeout, rate
+  limit, prose-instead-of-tool-call) — so `llm/claude.py` is at 100% coverage.
+  What is unverified is the wire to Anthropic's servers, and I won't claim
+  otherwise until it has run.
 - **Churn is not in the objective.** Over-messaging is bounded by hard caps, not
   priced.
 

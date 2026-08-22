@@ -82,6 +82,19 @@ def test_triage_compare_degrades_without_a_key(capsys, monkeypatch):
     assert "ANTHROPIC_API_KEY" in out
 
 
+def test_missing_key_exits_cleanly_without_a_traceback(capsys, monkeypatch):
+    """A forgotten env var should print the fix, not a stack trace.
+
+    Exit 2 (usage/configuration), not 1 (failure), so a script can tell the
+    difference between "you configured this wrong" and "the run went bad".
+    """
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    code, out = run(["triage", "--provider", "claude"], capsys)
+    assert code == 2
+    assert "Traceback" not in out
+    assert "python -m recoup demo" in out
+
+
 # ---------------------------------------------------------------------------
 # backtest, demo
 # ---------------------------------------------------------------------------

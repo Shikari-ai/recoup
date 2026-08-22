@@ -238,12 +238,17 @@ shows the difference on the same inputs.
 
 ## Honest limitations
 
-- **The live Claude path is written and reviewed but not executed.** No API key
-  was available while building this. `ClaudeProvider` forces structured output
-  through a tool call and degrades on failure, and its contract is exercised
-  against a fake provider in `tests/test_llm.py` — but it has not run against
-  the real API, and I would not claim otherwise. Set `ANTHROPIC_API_KEY` and run
-  `recoup triage --provider claude` to exercise it.
+- **The live Claude path has never made a real API call.** No key was available,
+  which is precisely why the offline provider is the default rather than a
+  fallback. The contract is fully tested against a fake `anthropic` client in
+  `tests/test_claude_provider.py`: forced tool-use, tool-block extraction among
+  interleaved prose, and every degradation path — timeout, rate limit, and a
+  model that answers in prose instead of calling the tool. That file takes
+  `llm/claude.py` to 100% coverage.
+
+  What remains unverified is the network wire itself. Set `ANTHROPIC_API_KEY`
+  and run `recoup triage --provider claude --compare` to close that, and until
+  someone does, this caveat stays.
 - **The confidence floor of 0.70 is a judgement, not a measurement.** Setting it
   properly needs a labelled set of genuinely novel codes, which requires
   production traffic.
