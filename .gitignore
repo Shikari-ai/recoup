@@ -22,3 +22,6 @@ venv/
 # lives in results/ as plain text so it can be read and diffed in review.
 artifacts/
 *.jsonl
+
+# Generated reports are deliverables, not source. Kept out of the tree.
+*.pdf

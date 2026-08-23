@@ -36,6 +36,9 @@ SKIP = (
     # presents as a seven-minute hang ending in a traceback, and as a scratch
     # ledger quietly growing to most of a gigabyte.
     "scripts/verify_docs",
+    # 34 mutations x a full suite run is roughly twenty minutes, well past the
+    # per-command timeout. Its evidence is committed in results/mutation.txt.
+    "scripts/mutate",
 )
 
 #: Illustrative snippets rather than commands: shell loops, and placeholders
