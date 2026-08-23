@@ -82,7 +82,7 @@ def anthropic_module(monkeypatch):
     mod = types.ModuleType("anthropic")
     mod.Anthropic = _factory
     monkeypatch.setitem(sys.modules, "anthropic", mod)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-not-a-real-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key-for-tests-only")
     return holder, created
 
 
@@ -107,7 +107,7 @@ def test_missing_api_key_raises_rather_than_silently_downgrading(monkeypatch):
 
 
 def test_missing_package_raises_with_actionable_guidance(monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key-for-tests-only")
     monkeypatch.setitem(sys.modules, "anthropic", None)
     from recoup.llm.claude import ClaudeProvider
 

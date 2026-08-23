@@ -52,6 +52,12 @@ from .base import LLMResponse, ProviderConfig
 
 
 class CircuitState(str, Enum):
+    """Whether calls reach the network.
+
+    ``str`` mixin so the value serialises straight into a log line or a
+    shadow-mode record without a conversion step.
+    """
+
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
@@ -85,6 +91,12 @@ class BreakerStats:
     probes: int = 0
 
     def snapshot(self) -> dict[str, Any]:
+        """Plain-dict view for logs and JSON.
+
+        Returns a new dict each call, so a caller stashing one for a log
+        line does not end up holding a live reference that mutates under
+        it before the line is written.
+        """
         return {
             "state": self.state.value,
             "consecutive_failures": self.consecutive_failures,
@@ -160,6 +172,13 @@ class CircuitBreaker:
         return True
 
     def record_success(self) -> None:
+        """Report a call that returned a usable answer.
+
+        Closes the circuit unconditionally and clears the failure run. One
+        success is treated as recovery rather than requiring a streak: the
+        cost of re-opening is one more failed call, and the cost of staying
+        open on a healthy dependency is every call degraded.
+        """
         s = self.stats
         s.consecutive_failures = 0
         s.opened_at = None
@@ -167,6 +186,13 @@ class CircuitBreaker:
         self._probe_in_flight = False
 
     def record_failure(self) -> None:
+        """Report a transport failure: timeout, rate limit, 5xx, or a raise.
+
+        Opens the circuit once ``failure_threshold`` consecutive failures
+        have accumulated. A failure while HALF_OPEN re-opens immediately
+        rather than re-accumulating the threshold -- the probe existed to
+        answer exactly this question and it answered no.
+        """
         s = self.stats
         s.transport_failures += 1
         self._probe_in_flight = False
@@ -228,10 +254,12 @@ class ResilientProvider:
 
     @property
     def name(self) -> str:
+        """Provider name, prefixed so degraded output is traceable in logs."""
         return f"resilient:{getattr(self.primary, 'name', 'unknown')}"
 
     @property
     def state(self) -> CircuitState:
+        """Current circuit state. Reading it may resolve an elapsed cooldown."""
         return self.breaker.state
 
     def backoff_delay(self, attempt: int) -> float:
@@ -253,6 +281,24 @@ class ResilientProvider:
         schema: dict[str, Any],
         max_tokens: int = 512,
     ) -> LLMResponse:
+        """Call the primary provider, or the fallback, and never raise.
+
+        Args:
+            system: system prompt, passed through unchanged.
+            user: user prompt, passed through unchanged.
+            schema: JSON Schema the provider forces the model to fill.
+            max_tokens: cap on the response.
+
+        Returns:
+            An ``LLMResponse``. ``degraded`` is True whenever the live model did
+            not answer -- including when the offline fallback answered well --
+            so a caller applying a confidence floor can tell the difference.
+
+        Trade-off worth knowing: retries add latency to a decision that is
+        blocking money movement. Two retries with capped, jittered backoff is
+        the deliberate ceiling, and the breaker exists so a sustained outage
+        stops paying that cost per call rather than for ever.
+        """
         self.breaker.stats.calls += 1
 
         if not self.breaker.allows_request():

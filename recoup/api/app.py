@@ -22,11 +22,11 @@ the CLI have no dependencies beyond the standard library.
 # Evaluating annotations eagerly keeps them as real objects.
 
 import os
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
 from ..domain import rupees
-from ..policypack import load_pack
 
 
 def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
@@ -38,11 +38,19 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
     from ..eval.backtest import _fresh, _warm_health, backtest
     from ..eval.report import ARM_NOTES
     from ..ingest import WebhookError, from_webhook_bytes
-    from ..policy import RecoveryPolicy, default_classifier
+    from ..hotreload import HotReloadingPack
+    from ..idempotency import IdempotencyRegister, full_key_for
+    from ..policy import RecoveryPolicy, RuleBasedPolicy, default_classifier
+    from ..router import RoutedPolicy, TrafficRouter
     from ..sim.generator import ScenarioConfig, generate
 
-    pack = load_pack()
-    state: dict[str, Any] = {}
+    # Compliance parameters change on a regulator's schedule, not on ours, so
+    # the pack is watched on disk rather than frozen at import. A rejected
+    # reload keeps the previous good pack live -- a typo in a compliance file
+    # must never be the thing that disables the guardrails.
+    pack_source = HotReloadingPack()
+    pack = pack_source.pack
+    state: dict[str, Any] = {"pack_source": pack_source, "pack": pack}
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -76,7 +84,78 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
         state["store"] = store
         state["health"] = health
 
+        # Cold-start routing. Below the measured ~300-receivable crossover the
+        # learned model loses to the rulebook, so the webhook path defers to the
+        # rulebook until a merchant has the history to earn the model.
+        #
+        # History *should* be counted per merchant: a model fitted on a large
+        # merchant's book says nothing about a merchant with three receivables,
+        # and routing the newcomer to it because somebody else has history is
+        # how a cold-start guard becomes decorative. TrafficRouter is built for
+        # that and takes the count per call.
+        #
+        # This endpoint cannot supply it. Razorpay's payment.failed payload
+        # carries no merchant identifier, so ingest assigns the placeholder
+        # `mch_live` and every request would look like a brand-new merchant
+        # forever -- permanently cold, the model never used, a guard that reads
+        # as caution while actually just being broken. So the count here is the
+        # size of the corpus this instance was warmed on, which is the true
+        # statement available: this process has seen that many receivables.
+        #
+        # A real deployment resolves the merchant from the account the webhook
+        # was delivered for and passes that merchant's count instead. That is a
+        # wiring detail of the host application, not of the router.
+        warmed_history = len(evs)
+        merchant_history: Counter[str] = Counter()  # reserved for a real merchant id
+        legacy = RuleBasedPolicy(
+            pack=pack, store=store, guardrails=guards,
+            classifier=default_classifier(),
+        )
+        state["router"] = TrafficRouter()
+        state["routed"] = RoutedPolicy(
+            legacy=legacy,
+            candidate=state["live"],
+            router=state["router"],
+            history_fn=lambda ev: merchant_history.get(ev.merchant_id, warmed_history),
+        )
+        # 15-minute window: this endpoint receives redelivered webhooks, which
+        # is exactly the replay the register exists to absorb.
+        state["idempotency"] = IdempotencyRegister()
+
+    def _apply_pack(state, new_pack) -> None:
+        """Point the live guardrails at a freshly loaded pack.
+
+        GuardrailEngine holds its pack by value, so reloading the file is only
+        half the job -- without this the new rules would sit in memory being
+        obeyed by nobody, which is the "documented but never wired" failure this
+        codebase has already made three times.
+        """
+        from ..guardrails import GuardrailEngine
+
+        guards = GuardrailEngine(new_pack, state["store"])
+        live = state["live"]
+        live.pack = new_pack
+        live.guardrails = guards
+        legacy = state["routed"].legacy
+        legacy.pack = new_pack
+        legacy.guardrails = guards
+
     # -- data ---------------------------------------------------------------
+
+    @app.get("/api/policy")
+    def policy_state() -> dict[str, Any]:
+        """Which compliance pack is live right now, and its reload history."""
+        p = state["pack_source"].get()
+        return {
+            "name": p.name,
+            "jurisdiction": p.jurisdiction,
+            "version": p.version,
+            "quiet_hours_local": [p.quiet_start_local, p.quiet_end_local],
+            "max_messages_per_7d": p.max_messages_per_7d,
+            "max_debit_attempts": p.max_debit_attempts,
+            "killswitch": p.killswitch,
+            "reload": state["pack_source"].stats(),
+        }
 
     @app.get("/api/summary")
     def summary() -> dict[str, Any]:
@@ -199,13 +278,48 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
         except WebhookError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
-        policy: RecoveryPolicy = state["live"]
         now = datetime.now(timezone.utc)
         state["store"].mark_seen(event.event_id, event.occurred_at)
-        d = policy.decide(event, now)
+
+        # Pick up a pack edited on disk since the last request. Throttled to
+        # one stat per second inside HotReloadingPack, so this is free on the
+        # hot path; the swap below only runs when the file genuinely changed.
+        live_pack = state["pack_source"].get()
+        if live_pack is not state["pack"]:
+            state["pack"] = live_pack
+            _apply_pack(state, live_pack)
+
+        routed = state["routed"]
+        d = routed.decide(event, now)
+        route = routed.last_route
+
+        # Claim before reporting a decision as actionable. Razorpay redelivers
+        # webhooks on non-2xx and on timeout, so the same receivable arriving
+        # twice is routine rather than exceptional -- and the second arrival
+        # must not become a second debit.
+        key = full_key_for(
+            event.event_id,
+            d.action.kind.value,
+            execute_at=d.action.execute_at,
+            rail=d.action.rail.value if d.action.rail else None,
+            channel=d.action.channel.value,
+        )
+        claim = state["idempotency"].claim(key, now=now)
         return JSONResponse(
             {
                 "signature_verified": bool(secret),
+                "idempotency": {
+                    "key": claim.key[:16],
+                    "accepted": claim.accepted,
+                    "state": claim.state.value,
+                    "reason": claim.reason,
+                },
+                "routing": {
+                    "arm": route.arm.value,
+                    "phase": route.phase.value,
+                    "history": route.historical_data_count,
+                    "reason": route.reason,
+                },
                 "event": {
                     "id": event.event_id,
                     "amount": rupees(event.amount_paise),

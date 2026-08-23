@@ -82,8 +82,8 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "remove the terminal short-circuit in the policy"),
 
     ("recoup/store.py",
-     "        if key in self._idempotency:\n            return False",
-     "        if False:\n            return False",
+     "        return self._idempotency.claim(key).accepted",
+     "        return True",
      "disable idempotency (a replayed debit executes twice)"),
 
     ("recoup/ingest.py",
@@ -158,6 +158,70 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "            rec.diverged = p_kind != kind",
      "            rec.diverged = False",
      "never report divergence between the two paths"),
+
+    # -- cold-start traffic router -----------------------------------------
+    ("recoup/router.py",
+     "        if historical_data_count < self.cold_start_threshold:\n            return Phase.COLD_START",
+     "        if False:\n            return Phase.COLD_START",
+     "send cold-start merchants to the model anyway"),
+
+    ("recoup/router.py",
+     "            arm = Arm.CANDIDATE if bucket < cutoff else Arm.LEGACY",
+     "            arm = Arm.CANDIDATE",
+     "send 100% of warm-up traffic to the model instead of 20%"),
+
+    ("recoup/router.py",
+     "    digest = hashlib.sha256(f\"{salt}:{receivable_id}\".encode()).digest()\n    return int.from_bytes(digest[:8], \"big\") % 100",
+     "    import random\n    return random.randrange(100)",
+     "make routing random instead of sticky per receivable"),
+
+    # -- idempotency register ----------------------------------------------
+    ("recoup/idempotency.py",
+     "            if existing is not None and existing.state is not ClaimState.FAILED:",
+     "            if False:",
+     "accept every claim (duplicate dispatches execute twice)"),
+
+    ("recoup/idempotency.py",
+     "    raw = f\"{receivable_id}:{action_type}:{attempt_number}\"",
+     "    raw = f\"{receivable_id}:{action_type}\"",
+     "drop the attempt number from the idempotency key"),
+
+    ("recoup/idempotency.py",
+     "        if self.retention is None:\n            return\n        cutoff = now - self.retention",
+     "        if True:\n            return\n        cutoff = now - self.retention",
+     "never expire keys (a legitimate re-attempt is blocked forever)"),
+
+    # -- pre-dispatch state guard -------------------------------------------
+    ("recoup/state_guard.py",
+     "    resolved = bool(source.is_resolved(event_id))\n    if resolved:",
+     "    resolved = bool(source.is_resolved(event_id))\n    if False:",
+     "act on a receivable the customer already settled out-of-band"),
+
+    ("recoup/state_guard.py",
+     "    if known is False:",
+     "    if False:",
+     "act on a receivable the source of truth has never heard of"),
+
+    ("recoup/eval/runner.py",
+     "        verdict = check_state(eid, store, now=now)\n        if verdict.rejected:",
+     "        verdict = check_state(eid, store, now=now)\n        if False:",
+     "skip the dispatch-time state check in the runner"),
+
+    # -- hot-reloading policy pack ------------------------------------------
+    ("recoup/hotreload.py",
+     "        if current == self._fingerprint:\n            return False",
+     "        if False:\n            return False",
+     "reparse the pack on every check even when unchanged"),
+
+    ("recoup/hotreload.py",
+     "    st = os.stat(path)\n    return st.st_mtime_ns, st.st_size",
+     "    st = os.stat(path)\n    return (0, 0)",
+     "make the file fingerprint constant (edits never detected)"),
+
+    ("recoup/hotreload.py",
+     "            self.failed_reloads += 1\n            self.last_error = str(exc)",
+     "            self.failed_reloads += 1\n            self.last_error = None",
+     "hide the reason a compliance pack failed to reload"),
 ]
 
 
@@ -254,6 +318,17 @@ def main() -> int:
         only = next(iter(set(catchers.values())))
         print(f"\nSUSPICIOUS: every mutation was caught by the same test, {only}.")
         print("That is what a pre-existing failure looks like, not defence in depth.")
+        return 1
+    if skipped:
+        print(
+            f"\n{len(skipped)} mutation(s) SKIPPED because their pattern no longer "
+            "matches the source."
+        )
+        print("A skip is a silent hole: it leaves the denominator smaller and the")
+        print("score unchanged, so coverage shrinks without the number moving.")
+        print("Retarget them at the code as it is now:")
+        for s in skipped:
+            print(f"  - {s}")
         return 1
     if survived:
         print("\nSURVIVING mutations -- the tests do not defend these:")

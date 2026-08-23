@@ -93,6 +93,11 @@ class ShadowRecord:
     recoup_blocked_alternative: str | None = None
 
     def to_json(self) -> str:
+        """Serialise to one compact JSON line for a log pipeline.
+
+        Keys are sorted so successive records diff cleanly, which matters
+        when the whole point of the output is comparing two policies.
+        """
         return json.dumps(asdict(self), separators=(",", ":"), sort_keys=True)
 
 

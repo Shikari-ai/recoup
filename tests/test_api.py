@@ -20,8 +20,8 @@ import json
 
 import pytest
 
-pytest.importorskip("fastapi", reason="the api extra is optional")
-pytest.importorskip("httpx", reason="TestClient needs httpx")
+pytest.importorskip("fastapi", reason="the api extra is optional", exc_type=ImportError)
+pytest.importorskip("httpx", reason="TestClient needs httpx", exc_type=ImportError)
 
 from fastapi.testclient import TestClient  # noqa: E402
 

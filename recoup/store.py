@@ -25,6 +25,7 @@ from .domain import (
     Rail,
     RiskEvent,
 )
+from .idempotency import IdempotencyRegister
 
 
 def instrument_key(event: RiskEvent) -> str:
@@ -80,7 +81,10 @@ class RecoveryStore:
         self._first_seen: dict[str, datetime] = {}
         self._resolved: dict[str, datetime] = {}
         self._notice_sent: dict[str, datetime] = {}
-        self._idempotency: set[str] = set()
+        # Unbounded: within one backtest a logical action must execute once,
+        # full stop. The 15-minute window on the dispatch path answers a
+        # different question -- see recoup/idempotency.py.
+        self._idempotency = IdempotencyRegister(retention=None)
 
     # -- writes ------------------------------------------------------------
 
@@ -113,12 +117,22 @@ class RecoveryStore:
         a redelivered webhook replays it -- the difference between one debit
         and two on a customer's statement.
         """
-        if key in self._idempotency:
-            return False
-        self._idempotency.add(key)
-        return True
+        return self._idempotency.claim(key).accepted
 
     # -- reads -------------------------------------------------------------
+
+    def is_resolved(self, event_id: str) -> bool:
+        """Has this receivable been settled, by us or by anyone else?
+
+        Satisfies the ``StateSource`` protocol in recoup/state_guard.py. The
+        write side of this has existed since the beginning; the read side had
+        not, which meant the source of truth could record a settlement that no
+        code path was able to ask about.
+        """
+        return event_id in self._resolved
+
+    def resolved_at(self, event_id: str) -> datetime | None:
+        return self._resolved.get(event_id)
 
     def action_count(self, event_id: str) -> int:
         return len(self._by_event.get(event_id, ()))

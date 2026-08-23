@@ -39,6 +39,7 @@ from ..guardrails import GuardrailEngine, action_cost
 from ..issuer_health import IssuerHealthMonitor
 from ..ledger import AuditLedger
 from ..policypack import PolicyPack
+from ..state_guard import check_state
 from ..store import ActionLogEntry, RecoveryStore, instrument_key
 from ..sim.world import World
 
@@ -89,6 +90,9 @@ class RunResult:
     #: Correctly *blocked*, so not violations -- but a non-zero count means the
     #: policy is planning actions that go stale, which is worth knowing.
     late_blocks: int = 0
+    #: Actions abandoned at dispatch because the receivable was
+    #: settled out-of-band after the decision was made.
+    state_rejections: int = 0
     #: Actions that executed despite a failing guardrail. MUST be zero.
     #:
     #: Populated by ``audit_executed_actions()`` -- an *independent* replay of
@@ -289,6 +293,28 @@ def run(
                 )
             heapq.heappush(heap, (now + timedelta(hours=6), counter, DECIDE, eid))
             counter += 1
+            continue
+
+        # Last-moment state check, against the store rather than the local
+        # task view. `st.resolved` was tested when this task was dequeued; the
+        # customer may have paid since. In this single-process simulation the
+        # two agree, so this never fires and the published figures are
+        # unchanged -- but the guard has to sit here, adjacent to the side
+        # effect, or it is not a guard. See recoup/state_guard.py.
+        verdict = check_state(eid, store, now=now)
+        if verdict.rejected:
+            result.state_rejections += 1
+            if ledger is not None:
+                ledger.append(
+                    "action_aborted_state_changed",
+                    {
+                        "event_id": eid,
+                        "action": action.kind.value,
+                        "state": verdict.state.value,
+                        "reason": verdict.reason,
+                    },
+                    ts=now,
+                )
             continue
 
         # Idempotency: one logical action executes exactly once.

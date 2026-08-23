@@ -52,8 +52,23 @@ def collected_test_count() -> int:
     return int(m.group(1))
 
 
+#: Tests gated behind optional extras. Without these installed the collected
+#: count is legitimately lower, and asserting against the README would fail for
+#: the environment rather than for the documentation.
+OPTIONAL_EXTRAS = ("fastapi", "httpx")
+
+
 @pytest.mark.slow
 def test_readme_states_the_real_test_count():
+    for mod in OPTIONAL_EXTRAS:
+        pytest.importorskip(
+            mod,
+            reason=(
+                f"{mod} is absent, so the api tests do not collect and the "
+                "documented total is expected to differ"
+            ),
+            exc_type=ImportError,
+        )
     text = README.read_text(encoding="utf-8")
     actual = collected_test_count()
 

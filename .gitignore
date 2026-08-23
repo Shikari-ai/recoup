@@ -1,6 +1,12 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# Tool caches. ruff and mypy each drop a self-ignoring .gitignore inside
+# their own cache dir, so these are belt-and-braces -- but relying on a
+# tool to hide its own droppings breaks the moment the tool changes or
+# the tree is copied without it.
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 *.egg-info/
