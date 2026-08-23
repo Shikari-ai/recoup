@@ -468,7 +468,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-384 tests at 94% coverage is a statement about lines executed, not about whether
+367 tests at 94% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -758,7 +758,7 @@ scripts/                   stability · learning_curve · ablation · sensitivit
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     384 tests, incl. adversarial + no-leakage
+tests/                     367 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -771,7 +771,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 384 tests
+pytest tests/ -q                         # 367 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?
@@ -797,13 +797,15 @@ python scripts/mutate.py                 # do the tests catch a broken guardrail
 - **I wrote both the world and the agent.** Mitigated by keeping world constants
   qualitative, quarantining them by import (enforced by test), and handing the
   baseline my best insight. A mitigation, not a solution.
-- **The live Claude path has never made a real API call.** No key was
-  available, and the offline provider is the default for that reason. Its
-  *contract* is fully tested against a fake client — 13 tests covering forced
-  tool-use, tool-block extraction, and every degradation path (timeout, rate
-  limit, prose-instead-of-tool-call) — so `llm/claude.py` is at 100% coverage.
-  What is unverified is the wire to Anthropic's servers, and I won't claim
-  otherwise until it has run.
+- **No hosted model is called at runtime.** The LLM path — triage of unmapped
+  error codes, and message drafting — runs entirely offline. A hosted-model
+  provider was written and tested against a fake client, then deleted rather
+  than shipped: it had never made a real API call, so every claim about it would
+  have been a claim about code nobody had run. What remains is a `Provider`
+  protocol as the seam, and `ResilientProvider` already wraps an arbitrary
+  provider with retries, a circuit breaker and an offline fallback. The cost is
+  real and measurable: the offline classifier cannot read a sentence it has no
+  keywords for, which is the ~1% of codes still landing as `unknown`.
 - **Churn is priced but not calibrated.** The objective now carries a
   `P(churn) x LTV` term, and the base rates in it are assumptions nobody here
   has measured. The term is inert unless a merchant supplies LTV, so it changes

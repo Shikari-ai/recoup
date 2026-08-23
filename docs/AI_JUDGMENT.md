@@ -231,24 +231,27 @@ contained "frozen", a cancellation hint, so the conservative profile stayed in
 force. Refusing to be confident is the behaviour you want in this position.
 
 What the stub cannot do is read a sentence it has no keywords for. That gap is
-precisely the case for the real model, and `recoup triage --provider claude`
-shows the difference on the same inputs.
+the standing case for a hosted model, and it is left open deliberately — see
+the limitations below.
 
 ---
 
 ## Honest limitations
 
-- **The live Claude path has never made a real API call.** No key was available,
-  which is precisely why the offline provider is the default rather than a
-  fallback. The contract is fully tested against a fake `anthropic` client in
-  `tests/test_claude_provider.py`: forced tool-use, tool-block extraction among
-  interleaved prose, and every degradation path — timeout, rate limit, and a
-  model that answers in prose instead of calling the tool. That file takes
-  `llm/claude.py` to 100% coverage.
+- **No hosted model is called at runtime, and that is a real limitation rather
+  than a design win.** A provider for one was written and fully tested against a
+  fake client — forced tool-use, tool-block extraction among interleaved prose,
+  and every degradation path (timeout, rate limit, a model answering in prose
+  instead of calling the tool). It had still never made a single real API call,
+  so shipping it would have meant carrying a component whose only honest
+  description was "untested against the thing it talks to". It was deleted.
 
-  What remains unverified is the network wire itself. Set `ANTHROPIC_API_KEY`
-  and run `recoup triage --provider claude --compare` to close that, and until
-  someone does, this caveat stays.
+  What that costs is visible in the numbers: the offline classifier resolves the
+  unmapped tail by keyword evidence, and roughly 1% of codes still end as
+  `unknown` where a model reading the description would likely place them. The
+  `Provider` protocol is the seam to plug one back in, and `ResilientProvider`
+  already supplies the retry, circuit-breaker and fallback behaviour any hosted
+  dependency on this path would need.
 - **The confidence floor of 0.70 is a judgement, not a measurement.** Setting it
   properly needs a labelled set of genuinely novel codes, which requires
   production traffic.

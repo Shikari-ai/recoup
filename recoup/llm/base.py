@@ -76,19 +76,19 @@ def get_provider(name: str | None = None, config: ProviderConfig | None = None) 
 
     Order: explicit argument > ``RECOUP_LLM`` env var > ``stub``.
 
-    Asking for ``claude`` without ``ANTHROPIC_API_KEY`` raises rather than
-    silently downgrading. Silently running a "live" demo on the stub is exactly
-    the kind of thing that turns into an embarrassing answer in a review.
+    Only the offline provider ships. A hosted-model provider was written and
+    tested against a fake client, then removed rather than shipped unexercised:
+    it had never made a real API call, so every claim about it would have been a
+    claim about code nobody had run. The ``Provider`` protocol is the seam where
+    one plugs back in, and ``ResilientProvider`` in ``breaker.py`` already wraps
+    an arbitrary provider with retries, a circuit breaker and a fallback.
     """
     choice = (name or os.environ.get("RECOUP_LLM") or "stub").lower()
     if choice in ("stub", "offline", "none"):
         from .stub import StubProvider
 
         return StubProvider()
-    if choice in ("claude", "anthropic"):
-        from .claude import ClaudeProvider
-
-        return ClaudeProvider(config or ProviderConfig())
     raise ProviderUnavailable(
-        f"unknown LLM provider {choice!r}; expected 'stub' or 'claude'"
+        f"unknown LLM provider {choice!r}; the offline provider ('stub') is the "
+        "only one shipped -- see the Provider protocol to add another"
     )

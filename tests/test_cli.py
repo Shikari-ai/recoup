@@ -73,26 +73,18 @@ def test_triage_accepts_a_single_code(capsys):
     assert "insufficient_funds" in out
 
 
-def test_triage_compare_degrades_without_a_key(capsys, monkeypatch):
-    """--compare must explain itself rather than crash when there is no key."""
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    code, out = run(["triage", "--compare"], capsys)
-    assert code == 0
-    assert "unavailable" in out.lower()
-    assert "ANTHROPIC_API_KEY" in out
-
-
-def test_missing_key_exits_cleanly_without_a_traceback(capsys, monkeypatch):
-    """A forgotten env var should print the fix, not a stack trace.
+def test_an_unknown_provider_exits_cleanly_without_a_traceback(capsys):
+    """A bad --provider is a configuration problem, not a crash.
 
     Exit 2 (usage/configuration), not 1 (failure), so a script can tell the
-    difference between "you configured this wrong" and "the run went bad".
+    difference between "you configured this wrong" and "the run went bad", and
+    the message names what is actually available rather than printing a stack
+    trace at somebody who made a typo.
     """
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    code, out = run(["triage", "--provider", "claude"], capsys)
+    code, out = run(["triage", "--provider", "gpt4"], capsys)
     assert code == 2
     assert "Traceback" not in out
-    assert "python -m recoup demo" in out
+    assert "stub" in out
 
 
 # ---------------------------------------------------------------------------

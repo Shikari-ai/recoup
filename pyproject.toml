@@ -23,7 +23,6 @@ dependencies = []
 
 [project.optional-dependencies]
 api = ["fastapi>=0.110", "uvicorn>=0.27"]
-llm = ["anthropic>=0.40"]
 # httpx is what fastapi's TestClient runs on. It is not pulled in by the api
 # extra, so without it here the 19 API tests importorskip themselves and CI
 # reports green over an integration surface it never executed.

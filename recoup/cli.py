@@ -193,9 +193,6 @@ def cmd_triage(args: argparse.Namespace) -> int:
         else [(c, d, e) for c, d, e in NOVEL_CODES]
     )
 
-    if args.compare:
-        return _triage_compare(cases)
-
     svc = TriageService(provider=get_provider(args.provider))
     _p(f"provider: {svc.provider.name}")
     _p()
@@ -217,66 +214,6 @@ def cmd_triage(args: argparse.Namespace) -> int:
     _p(f"stats: {svc.stats}")
     _p()
     _p(svc.promote_candidates())
-    return 0
-
-
-def _triage_compare(cases) -> int:
-    """Run the offline provider and the live model on identical inputs.
-
-    The offline provider scores keyword evidence; it cannot read a sentence it
-    has no keywords for. This is the command that shows where that gap is real
-    and where it is not -- which is the honest way to decide whether the model
-    is earning its latency and its dependency.
-    """
-    from .llm.base import get_provider
-    from .llm.triage import TriageService
-
-    stub = TriageService(provider=get_provider("stub"))
-    try:
-        live = TriageService(provider=get_provider("claude"))
-    except Exception as exc:  # noqa: BLE001
-        _p(f"live provider unavailable: {exc}")
-        _p()
-        _p("Comparison needs both providers. Set ANTHROPIC_API_KEY and install")
-        _p("the extra:  pip install -e '.[llm]'")
-        _p("Showing offline results only.")
-        _p()
-        live = None
-
-    hdr = f"{'error code':<28}{'expected':<20}{'stub':<20}{'conf':>6}"
-    if live:
-        hdr += f"  {'claude':<20}{'conf':>6}"
-    _p(hdr)
-    _p("-" * len(hdr))
-
-    agree = disagree = 0
-    for code, desc, expected in cases:
-        _, a = stub.classify(code, desc)
-        line = (
-            f"{code:<28}{(expected.value if expected else '-'):<20}"
-            f"{(a.failure_class.value if a else '-'):<20}"
-            f"{(a.confidence if a else 0):>6.2f}"
-        )
-        if live:
-            _, b = live.classify(code, desc)
-            line += (
-                f"  {(b.failure_class.value if b else '-'):<20}"
-                f"{(b.confidence if b else 0):>6.2f}"
-            )
-            if a and b:
-                if a.failure_class is b.failure_class:
-                    agree += 1
-                else:
-                    disagree += 1
-        _p(line)
-
-    _p()
-    if live:
-        _p(f"agree {agree}, disagree {disagree}")
-        _p(f"stub:   {stub.stats}")
-        _p(f"claude: {live.stats}")
-    else:
-        _p(f"stub: {stub.stats}")
     return 0
 
 
@@ -394,11 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("triage", help="classify error codes the taxonomy cannot map")
     t.add_argument("--code", help="a single error code to classify")
     t.add_argument("--description", help="the accompanying error description")
-    t.add_argument("--provider", default=None, help="stub (default) or claude")
-    t.add_argument(
-        "--compare", action="store_true",
-        help="run the offline provider and the live model side by side",
-    )
+    t.add_argument("--provider", default=None, help="offline provider ('stub')")
     t.set_defaults(func=cmd_triage)
 
     n = sub.add_parser(

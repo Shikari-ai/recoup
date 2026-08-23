@@ -20,9 +20,7 @@ jobs:
       - name: Install
         # The api extra too, or the 19 tests covering the webhook, HMAC
         # verification and the decision endpoint silently do not collect and CI
-        # reports green over an untested integration surface. The llm extra
-        # stays out on purpose: ClaudeProvider is tested against a fake client,
-        # so installing the real SDK would add a dependency and prove nothing.
+        # reports green over an untested integration surface.
         run: pip install -e '.[dev,api]'
 
       # The core engine must work with nothing installed. If this breaks, the

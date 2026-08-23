@@ -16,8 +16,11 @@ genuinely ambiguous text it returns a low number and the conservative UNKNOWN
 profile stays in force.
 
 What it is not: a language model. It cannot read a sentence it has no keywords
-for. That gap is precisely the case for ``ClaudeProvider``, and the honest way
-to see the difference is to run both -- ``recoup triage --compare``.
+for, and roughly 1% of error codes still end as UNKNOWN because of it. That gap
+is the standing case for a hosted model, and it is left open on purpose: a
+provider for one was written, tested against a fake client, and then deleted
+rather than shipped without ever having made a real API call. ``Provider`` in
+base.py is the seam to plug one back in.
 """
 
 from __future__ import annotations
