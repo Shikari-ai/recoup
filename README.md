@@ -468,7 +468,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-367 tests at 94% coverage is a statement about lines executed, not about whether
+367 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
