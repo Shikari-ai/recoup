@@ -83,10 +83,10 @@ CLAIMS: tuple[Claim, ...] = (
           r"audit ledger\s+([\d,]+) records", "{}", ("README.md",)),
 
     # -- multi-seed stability ---------------------------------------------
-    Claim("stability median", "stability_8_seeds.txt",
+    Claim("stability median", "stability_30.txt",
           r"lift vs rule_based\s+median \+([\d.]+)%", "median +{}%",
           ("README.md", "docs/EVALUATION.md")),
-    Claim("stability wins", "stability_8_seeds.txt",
+    Claim("stability wins", "stability_30.txt",
           r"wins vs rule_based: (\d+/\d+) seeds", "{} seeds",
           ("README.md", "docs/EVALUATION.md")),
 
@@ -175,7 +175,7 @@ def main() -> int:
         print("Regenerate with:")
         print("  python -m recoup backtest --events 6000 --seed 42 \\")
         print("      --ledger artifacts/audit.jsonl --quiet > results/backtest_seed42.txt")
-        print("  python scripts/stability.py --seeds 8 --events 4000 > results/stability_8_seeds.txt")
+        print("  python scripts/stability.py --seeds 30 --events 4000 > results/stability_30.txt")
         print("  python -m recoup sensitivity --events 4000 > results/sensitivity.txt")
         print("  python scripts/ablation.py --events 4000 > results/ablation.txt")
         return 1

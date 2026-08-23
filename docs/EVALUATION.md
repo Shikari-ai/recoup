@@ -38,9 +38,9 @@ is production-shaped; the evidence that it *works* is not production evidence.
 **Not claimed:** "Recoup recovers Rs 1.1 crore."
 
 **Claimed:** *Under identical events, identical guardrails, identical action
-costs and identical random draws, an EV-ranked policy recovered a median 30.5%
-more attributed value than a strong hand-written rulebook across 8 independent
-scenarios (positive in 8/8), and a median 38.3% more across 23 perturbed worlds
+costs and identical random draws, an EV-ranked policy recovered a median 24.4%
+more attributed value than a strong hand-written rulebook across 30 independent
+scenarios (positive in 30/30), and a median 38.3% more across 23 perturbed worlds
 (positive in 23/23) — while executing zero guardrail violations in every run,
 and only above a measured data threshold of ~300 receivables.*
 
@@ -112,23 +112,26 @@ meaning what it claims.
 
 ## Results
 
-### Stability across 8 independent scenarios
+### Stability across 30 independent scenarios
 
 ```bash
-python scripts/stability.py --seeds 8 --events 4000
+python scripts/stability.py --seeds 30 --events 4000
 ```
 
-Reported in `results/stability_8_seeds.txt`. The distribution matters more than any
-single figure: **lift is heavy-tailed**, because recovered value is dominated by
-a small number of large B2B receivables, so the spread is wide (min +0.6%, max
-+48.3%) even though every seed is positive. A project quoting only its best seed
-would be lying by selection, so the full range is reported alongside the median:
+Reported in `results/stability_30.txt`. The seeds (100-129) are held out from
+both the reported seed (42) and the tuning seed (7), so nothing here is fitted.
+
+The distribution matters more than any single figure: **lift is heavy-tailed**,
+because recovered value is dominated by a small number of large B2B receivables,
+so the spread is wide (min +0.6%, max +55.5%) even though every seed is
+positive. A project quoting only its best seed would be lying by selection, so
+the full range is reported alongside the median:
 
 ```
-lift vs rule_based    median +20.5%   mean +25.6%   min +0.6%   max +48.3%
-lift vs fixed_retry   median +267.5%  mean +288.3%  min +183.8% max +464.7%
-pooled (all seeds)    +24.0%          wins 8/8 seeds
-AUC median 0.772      ECE median 0.014
+lift vs rule_based    median +24.4%   mean +26.9%   min +0.6%   max +55.5%
+lift vs fixed_retry   median +285.9%  mean +311.8%  min +123.8% max +528.9%
+pooled (all seeds)    +25.9%          wins 30/30 seeds
+AUC median 0.770      ECE median 0.014
 guardrail violations across every seed and arm: 0
 ```
 
@@ -555,8 +558,9 @@ component produces this number" is the first question worth asking:
 ## Known weaknesses
 
 - **Heavy-tailed variance.** Lift is dominated by a few large B2B receivables.
-  8 seeds is enough to show the sign is usually right, not enough for a tight
-  confidence interval.
+  30 seeds is enough to settle the sign — every one is positive — but not
+  enough for a tight confidence interval, and one seed came in at +0.6%, which
+  is a tie in all but name.
 - **The world is my model of reality, and I wrote both it and the agent.** I
   mitigated this by keeping the constants qualitative rather than tuned to a
   target, quarantining them from the agent by import, and giving the baseline

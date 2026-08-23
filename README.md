@@ -74,7 +74,7 @@ stop me deploying it.
 | Question a reviewer would ask | Answer | Where it is measured |
 |---|---|---|
 | Does it beat what merchants run today? | **+286.6%** vs fixed retry | `results/backtest_seed42.txt` |
-| Does it beat a *good engineer's* rulebook? | **+31.1%**, positive on 8/8 seeds | `scripts/stability.py` |
+| Does it beat a *good engineer's* rulebook? | **+31.1%**, positive on 30/30 held-out seeds | `scripts/stability.py` |
 | Is that judgment, or just doing more? | **+49.6%** vs same-budget-random | `exhaustive_random` arm |
 | Is the ML earning its place? | **+57.8%** over the same system, model off | `scripts/ablation.py` |
 | Is the model any good? | 93.2% of a measured oracle ceiling | `scripts/ceiling.py` |
@@ -133,19 +133,27 @@ been small, the honest thing would have been to delete the model and ship the
 rulebook.
 
 One seed is an anecdote, so `scripts/stability.py` re-runs the entire pipeline
-across 8 independent scenarios of 4,000 receivables each:
+across **30 independent scenarios** of 4,000 receivables each. The seeds are
+held out from both the reported seed (42) and the tuning seed (7), so nothing
+below is fitted:
 
 ```
-lift vs rule_based    median +20.5%   mean +25.6%   min +0.6%   max +48.3%
-lift vs fixed_retry   median +267.5%  mean +288.3%  min +183.8% max +464.7%
-pooled (all seeds)    +24.0%          wins 8/8 seeds
-AUC median 0.772      ECE median 0.014
+lift vs rule_based    median +24.4%   mean +26.9%   min +0.6%   max +55.5%
+lift vs fixed_retry   median +285.9%  mean +311.8%  min +123.8% max +528.9%
+pooled (all seeds)    +25.9%          wins 30/30 seeds
+AUC median 0.770      ECE median 0.014
 guardrail violations across every seed and arm: 0
 ```
 
+**Positive on 30 of 30 held-out scenarios**, with zero guardrail violations in
+any seed of any arm. Thirty is enough that the sign is not in question; it is
+still not enough for a tight confidence interval, and the spread says why.
+
 Lift is heavy-tailed — recovered value is dominated by a few large B2B
-receivables — so the spread is wide (min +0.6%, max +48.3%) even with every seed
-positive, and the full range is reported rather than the best one.
+receivables — so the range is wide (min +0.6%, max +55.5%) even with every seed
+positive, and the full range is reported rather than the best one. The min is
+the honest number to quote for a worst case: **one scenario in thirty came in
+at +0.6%, essentially a tie with the rulebook.**
 
 ### AUC 0.777 sounds mediocre. It is 93% of the achievable maximum.
 
@@ -460,7 +468,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-319 tests at 95% coverage is a statement about lines executed, not about whether
+325 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -642,7 +650,7 @@ scripts/                   stability · learning_curve · ablation · sensitivit
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     227 tests, incl. adversarial + no-leakage
+tests/                     325 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -655,8 +663,8 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 227 tests
-python scripts/stability.py --seeds 8    # multi-seed variance
+pytest tests/ -q                         # 325 tests
+python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?
 python scripts/health_signal.py          # when does outage detection work?
@@ -672,9 +680,9 @@ python scripts/mutate.py                 # do the tests catch a broken guardrail
 
 - **Outcomes are simulated.** The mechanisms are real payments behaviour; the
   coefficients are estimates. Only production traffic settles it.
-- **Lift is heavy-tailed.** Dominated by a few large B2B receivables. 8 seeds
-  and 19 worlds show the sign is reliable; neither gives a tight confidence
-  interval.
+- **Lift is heavy-tailed.** Dominated by a few large B2B receivables. 30 seeds
+  and 23 worlds show the sign is reliable; neither gives a tight confidence
+  interval, and one seed in thirty was a near-tie.
 - **It needs data.** Below ~300 receivables the result is unreliable (one seed
   −27%), and the crossover was measured on this simulator, so a real merchant's
   threshold will differ.
