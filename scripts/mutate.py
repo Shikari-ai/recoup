@@ -100,6 +100,64 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if conf < self.confidence_floor:",
      "        if False and conf < self.confidence_floor:",
      "ignore the LLM triage confidence floor"),
+
+    # -- churn-adjusted expected value -------------------------------------
+    ("recoup/churn.py",
+     "    if action.kind not in COMMS_ACTIONS:\n        return 0.0",
+     "    if False:\n        return 0.0",
+     "charge churn for silent actions (retries, waits)"),
+
+    ("recoup/churn.py",
+     "    n = min(recent_contacts(event), MAX_FATIGUE_EXPONENT)",
+     "    n = recent_contacts(event)",
+     "remove the fatigue exponent cap"),
+
+    ("recoup/churn.py",
+     "    ltv = event.customer.ltv_paise\n    if ltv <= 0:\n        return 0",
+     "    ltv = event.customer.ltv_paise or 100_000\n    if False:\n        return 0",
+     "price churn when LTV is unknown (breaks backward compatibility)"),
+
+    ("recoup/churn.py",
+     "    return min(1.0, p0 * (growth ** n))",
+     "    return min(1.0, p0 * (1.0 ** n))",
+     "make churn linear instead of compounding with contact"),
+
+    # -- LLM circuit breaker -----------------------------------------------
+    ("recoup/llm/breaker.py",
+     "        s.consecutive_failures += 1\n        if s.consecutive_failures >= self.failure_threshold:\n            self._open()",
+     "        s.consecutive_failures += 1\n        if False:\n            self._open()",
+     "never open the circuit, however many failures"),
+
+    ("recoup/llm/breaker.py",
+     "        if self._probe_in_flight:\n            return False",
+     "        if False:\n            return False",
+     "allow unlimited concurrent half-open probes (thundering herd)"),
+
+    ("recoup/llm/breaker.py",
+     "        if s.state is CircuitState.HALF_OPEN:\n            self._open()\n            return",
+     "        if False:\n            self._open()\n            return",
+     "a failed probe does not reopen the circuit"),
+
+    ("recoup/llm/breaker.py",
+     "        if not self.breaker.allows_request():",
+     "        if False:",
+     "call the API even when the circuit is open (no fail-fast)"),
+
+    # -- shadow mode --------------------------------------------------------
+    ("recoup/shadow.py",
+     "        self._emit(rec)\n        return legacy",
+     "        self._emit(rec)\n        return proposed if rec.recoup_action else legacy",
+     "execute the AGENT's action instead of the legacy one"),
+
+    ("recoup/shadow.py",
+     "        except Exception as exc:  # noqa: BLE001 - this is the containment boundary",
+     "        except KeyboardInterrupt as exc:",
+     "let an agent crash escape the shadow boundary"),
+
+    ("recoup/shadow.py",
+     "            rec.diverged = p_kind != kind",
+     "            rec.diverged = False",
+     "never report divergence between the two paths"),
 ]
 
 
@@ -117,15 +175,41 @@ def main() -> int:
             return 2
 
     print("Mutation spot-check: every row SHOULD be caught (the suite turns red).\n")
-    print(f"{'#':>3}  {'result':<10} mutation")
-    print("-" * 78)
 
     survived, skipped = [], []
+    catchers: dict[int, str] = {}
     with tempfile.TemporaryDirectory() as td:
         work = pathlib.Path(td) / "recoup"
         shutil.copytree(ROOT, work, ignore=shutil.ignore_patterns(
             ".git", "__pycache__", "*.pyc", ".pytest_cache", "artifacts",
             "results", ".venv", "htmlcov"))
+
+        # Baseline first, and this is not ceremony. Mutation testing infers
+        # "the tests caught it" from "the suite went red", so a suite that is
+        # ALREADY red reports a perfect score while testing nothing. That
+        # happened here: an unrelated stale-count assertion failed in every
+        # mutant, -x stopped the run before any mutated line executed, and the
+        # harness cheerfully printed 11/11. A green baseline is the premise the
+        # whole method rests on, so it gets checked rather than assumed.
+        print("  baseline  running the unmutated suite...", flush=True)
+        base = subprocess.run(
+            [sys.executable, "-m", "pytest", "tests/", "-q", "--no-header",
+             "-p", "no:cacheprovider"],
+            cwd=work, capture_output=True, text=True, timeout=args.timeout,
+        )
+        if base.returncode != 0:
+            print("  baseline  FAILED -- refusing to run mutations.\n")
+            for line in base.stdout.splitlines():
+                if line.startswith("FAILED") or " failed" in line:
+                    print(f"            {line[:88]}")
+            print("\nEvery mutation would report as 'caught' by these same "
+                  "pre-existing failures,\nwhich would be a fabricated score. "
+                  "Fix the suite, then re-run.")
+            return 2
+        print("  baseline  green\n")
+
+        print(f"{'#':>3}  {'result':<10} mutation")
+        print("-" * 78)
 
         for i, (rel, find, repl, desc) in todo:
             target = work / rel
@@ -151,13 +235,26 @@ def main() -> int:
                     (x for x in r.stdout.splitlines() if x.startswith("FAILED")), ""
                 )
                 if line:
-                    print(f"     {'':<10} {line.split(' - ')[0][:66]}")
+                    who = line.split(" - ")[0].removeprefix("FAILED").strip()
+                    catchers[i] = who
+                    print(f"     {'':<10} {who[:66]}")
             else:
                 survived.append(desc)
 
     print("-" * 78)
     ran = len(todo) - len(skipped)
     print(f"\n{ran - len(survived)}/{ran} mutations caught")
+
+    # One test catching every unrelated mutation is the signature of a suite
+    # that is red for its own reasons rather than tests that actually defend
+    # the mutated behaviour. The baseline check above should make this
+    # impossible; it is reported anyway, because a silent invariant is one
+    # nobody notices breaking.
+    if len(catchers) > 2 and len(set(catchers.values())) == 1:
+        only = next(iter(set(catchers.values())))
+        print(f"\nSUSPICIOUS: every mutation was caught by the same test, {only}.")
+        print("That is what a pre-existing failure looks like, not defence in depth.")
+        return 1
     if survived:
         print("\nSURVIVING mutations -- the tests do not defend these:")
         for s in survived:

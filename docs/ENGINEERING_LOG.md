@@ -575,6 +575,63 @@ everywhere" is never memory — it is a test that enumerates the call sites.
 
 ---
 
+## 12. My mutation harness reported a perfect score while testing nothing
+
+Adding three production-hardening features (churn-adjusted EV, an LLM circuit
+breaker, shadow-mode execution) I wrote eleven new mutations and ran them. The
+harness printed **11/11 caught**. Every one of the eleven was a lie.
+
+The tell was in the output and I nearly skimmed past it: every row named the
+*same* catching test, `test_docs_counts.py::test_readme_states_the_real_test_count`.
+That test has nothing to do with churn or circuit breakers. It was failing
+because the snapshot had been taken while the README still claimed 325 tests and
+346 existed — and the harness runs `pytest -x`, so it stopped at that first
+failure. **Not one mutated line was ever executed.**
+
+The method has a premise nobody states: mutation testing infers "the tests
+caught it" from "the suite went red". A suite that is *already* red satisfies
+that condition for every mutation, forever, while proving nothing.
+
+The bitter part is what made it red. The count guard was something I had added
+an hour earlier, after `verify_docs.py` surfaced three stale test counts in the
+README. A guard I introduced to stop documentation drifting silently broke the
+tool that validates my other guards — and it broke it in the direction of
+*more* apparent confidence, which is the worst direction available.
+
+**The fix is structural, not a re-run.** `scripts/mutate.py` now runs the
+unmutated suite first and refuses to proceed unless it is green, printing the
+pre-existing failures instead of a fabricated score. It also reports which test
+caught each mutation, and if a single test catches everything it prints
+`SUSPICIOUS` and exits non-zero — because that pattern is the signature of this
+exact bug rather than of defence in depth.
+
+With the gate in place the honest number was **20/22**, and the two survivors
+were both real:
+
+**Churn was charged for silent actions and nothing noticed.** Deleting the
+`kind not in COMMS_ACTIONS` guard left the suite green, because a retry action's
+channel defaults to `Channel.NONE` and that channel's base rate is already
+`0.0`. Two independent reasons produced the same answer, so no test could tell
+which one was load-bearing. Precisely the masking from entry 3's neighbourhood —
+a rule indistinguishable from its neighbour is a rule nobody is testing.
+
+**A failed circuit-breaker probe did not need to reopen the circuit.** Removing
+that branch changed nothing, because `consecutive_failures` carried over from
+the open period at the threshold and re-crossed it on the fall-through. Here I
+changed the *design* rather than the test: half-open now resets the failure
+count, which is what half-open should mean — the dependency gets a clean slate.
+That makes the branch the only thing standing between a failed probe and a
+circuit that keeps admitting probes to a dead API, and its absence now has a
+consequence a test can see.
+
+**What I take from it.** I have spent this project being suspicious of results
+that flattered the agent. I was not suspicious of a result that flattered the
+*test suite*, and it took me one glance away from shipping "11/11" into a
+document. Verification tools need verifying, and the cheapest version of that is
+making them assert their own premises out loud.
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`
@@ -629,6 +686,13 @@ should come first.
 can both be correct and completely unconnected, and every unit test will still
 pass. The tests I write least often are the ones that assert a behaviour change
 end to end, and that is exactly the gap an unwired component hides in.
+
+**A verification tool needs to assert its own premises.** Entry 12. Mutation
+testing silently assumes a green baseline; `verify_docs.py` silently assumed it
+was not one of the commands it executes. Both assumptions were false, both
+failed toward looking healthier rather than sicker, and both were one line to
+check. Anything whose output is a reassurance should be able to say why it is
+entitled to reassure you.
 
 **Assume derived claims will outlive their cause.** The learning-curve crossover
 was a *consequence* of the feature set, but it lived in five files as a bare

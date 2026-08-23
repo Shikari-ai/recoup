@@ -202,6 +202,15 @@ class CustomerContext:
     #: Messages already sent to this customer in the current rolling window,
     #: used to enforce comms fatigue caps.
     comms_sent_7d: int = 0
+    #: Expected remaining lifetime value of this customer, in paise.
+    #:
+    #: Zero means *not supplied*, not "worthless", and the two must not be
+    #: conflated: the churn term of the EV equation multiplies by this, so an
+    #: unknown LTV makes the term vanish and the engine behaves exactly as it
+    #: did before churn was priced. A merchant opts into relationship-aware
+    #: decisioning by populating this field, and gets the old behaviour by
+    #: leaving it alone. See recoup/churn.py.
+    ltv_paise: int = 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
+from .churn import CHURN_BASE, churn_cost_paise
 from .domain import (
     MANDATE_RAILS,
     Action,
@@ -148,11 +149,39 @@ CHANNEL_PREFERENCE: tuple[Channel, ...] = (
 )
 
 
+def _resolve_churn_base(pack: PolicyPack) -> dict[Channel, float] | None:
+    """Translate a pack's string-keyed churn overrides into Channel keys.
+
+    An unrecognised channel name is a typo in a compliance pack, and a typo
+    that silently does nothing is the worst possible outcome for a file whose
+    entire job is to be authoritative. Fail loudly at load, not at 3am.
+    """
+    if not pack.churn_base:
+        return None
+    names = {c.value: c for c in Channel}
+    out = dict(CHURN_BASE)
+    for key, val in sorted(pack.churn_base.items()):
+        ch = names.get(key.lower())
+        if ch is None:
+            raise ValueError(
+                f"policy pack {pack.name!r} sets churn.base_probability.{key}, "
+                f"which is not a channel; expected one of {sorted(names)}"
+            )
+        out[ch] = val
+    return out
+
+
 @dataclass(slots=True)
 class Candidate:
     action: Action
     p_recover: float
     cost_paise: int
+    #: Expected relationship damage, in paise: P(churn) x LTV. Carried
+    #: separately from ``cost_paise`` so an operator can see how much of a
+    #: rejection was "this costs money to send" versus "this costs us the
+    #: customer" -- the same reason blocked alternatives are kept rather than
+    #: discarded.
+    churn_cost_paise: int
     ev_paise: int
     features: dict[str, float]
     verdicts: list[GuardrailVerdict]
@@ -174,6 +203,7 @@ class Candidate:
             "p_recover": round(self.p_recover, 4),
             "ev_paise": self.ev_paise,
             "cost_paise": self.cost_paise,
+            "churn_cost_paise": self.churn_cost_paise,
             "allowed": self.allowed,
             "blocked_by": self.blocked_by(),
         }
@@ -249,6 +279,10 @@ class RecoveryPolicy:
         self.explore = explore
         self.max_candidates = max_candidates
         self._rng = random.Random(seed)
+        # Resolved once: the pack stores channel names as strings, the churn
+        # table is keyed by Channel. None means "use the built-in table", which
+        # is distinct from an empty override meaning "no channel churns".
+        self._churn_base = _resolve_churn_base(pack)
 
     # -- candidate generation ---------------------------------------------
 
@@ -366,15 +400,23 @@ class RecoveryPolicy:
         feats = extract(event, cls, action, snap, now)
         p = self.model.predict_proba(feats)
         cost = action_cost(self.pack, action)
+        # The relationship is part of the price. Zero whenever LTV is unknown,
+        # which keeps this term inert for callers that have not supplied it.
+        churn = churn_cost_paise(
+            event, action,
+            growth=self.pack.churn_growth,
+            base=self._churn_base,
+        )
         if action.kind in (ActionKind.WAIT, ActionKind.STOP):
             p, ev = 0.0, 0
         else:
-            ev = int(round(p * event.amount_paise)) - cost
+            ev = int(round(p * event.amount_paise)) - cost - churn
         verdicts = self.guardrails.check(event, cls, action, now)
         return Candidate(
             action=action,
             p_recover=p,
             cost_paise=cost,
+            churn_cost_paise=churn,
             ev_paise=ev,
             features=feats,
             verdicts=verdicts,

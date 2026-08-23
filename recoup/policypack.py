@@ -58,6 +58,15 @@ class PolicyPack:
     max_comms_cost_per_merchant_paise_per_day: int
     action_cost_paise: dict[str, int]
     killswitch: bool
+    #: Fatigue multiplier applied per message already sent to a customer when
+    #: pricing churn. Optional in the pack; see recoup/churn.py for what it
+    #: means and why the shipped default is an assumption rather than a
+    #: measurement.
+    churn_growth: float = 1.5
+    #: Per-channel base churn probability, keyed by channel name. Empty means
+    #: "use the built-in table", which is the common case -- a merchant with
+    #: real retention data overrides it here rather than in code.
+    churn_base: dict[str, float] = field(default_factory=dict)
     source_path: str = ""
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -151,6 +160,14 @@ def load_pack(path: str | Path | None = None) -> PolicyPack:
         action_cost_paise={str(k): int(v) for k, v in budget["action_cost_paise"].items()},
         killswitch=bool(raw.get("killswitch", {}).get("enabled", False))
         or os.environ.get("RECOUP_KILLSWITCH") in {"1", "true", "yes"},
+        # Optional block. Packs written before churn existed load unchanged,
+        # which is the point -- a new pricing term must not invalidate every
+        # compliance pack already in the field.
+        churn_growth=float(raw.get("churn", {}).get("growth_per_message", 1.5)),
+        churn_base={
+            str(k): float(v)
+            for k, v in raw.get("churn", {}).get("base_probability", {}).items()
+        },
         source_path=str(p),
         raw=raw,
     )
@@ -179,3 +196,12 @@ def _validate(p: PolicyPack) -> None:
     for rule in p.network_retry.values():
         if rule.max_attempts < 1 or rule.window_days < 1:
             raise PolicyPackError(f"network rule {rule.scheme!r} has impossible limits")
+    if p.churn_growth < 1.0:
+        raise PolicyPackError(
+            "churn.growth_per_message below 1.0 would make each additional "
+            "message less costly than the last, which inverts the fatigue it "
+            "is meant to model"
+        )
+    for ch, val in p.churn_base.items():
+        if not 0.0 <= val <= 1.0:
+            raise PolicyPackError(f"churn.base_probability.{ch} must be a probability")

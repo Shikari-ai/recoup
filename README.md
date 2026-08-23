@@ -468,32 +468,42 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-325 tests at 95% coverage is a statement about lines executed, not about whether
+350 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
 
 ```
-11/11 mutations caught
-  disable the never-retry gate ............ caught
-  disable quiet hours ..................... caught
-  raise the debit cap 100x ................ caught
-  skip the RBI pre-debit notice ........... caught
-  stop detecting edited ledger payloads ... caught
-  stop detecting spliced ledger entries ... caught
-  remove the terminal short-circuit ....... caught
-  disable idempotency ..................... caught
-  accept any webhook signature ............ caught
-  stop blocking credential solicitation ... caught
-  ignore the triage confidence floor ...... caught
+baseline  green
+22/22 mutations caught
+
+  guardrails   never-retry gate · quiet hours · debit cap · RBI notice
+  ledger       edited payloads · spliced entries (valid seq, broken link)
+  policy       terminal short-circuit · idempotency
+  ingest       webhook signature
+  llm          credential solicitation · triage confidence floor
+  churn        silent actions · fatigue cap · unknown-LTV inertness · compounding
+  breaker      opens on failures · single probe · failed probe reopens · fail-fast
+  shadow       legacy action executes · crash containment · divergence reporting
 ```
 
-It got there by finding three that **survived** the first run, and the most
-useful was the ledger. Disabling the back-link check changed nothing, because
-the only reordering test also broke sequence numbering — and the sequence check
-fires first. A splice with valid sequence numbers would have verified as intact,
-and the tamper-evidence claim would have been half-true. Full account in
-[results/mutation.txt](results/mutation.txt) and
+It got there the hard way, twice.
+
+**The first run found three survivors**, and the most useful was the ledger.
+Disabling the back-link check changed nothing, because the only reordering test
+also broke sequence numbering — and the sequence check fires first. A splice
+with valid sequence numbers would have verified as intact, and the
+tamper-evidence claim would have been half-true.
+
+**The second run reported a perfect score that was worth nothing.** Every
+mutation was "caught" by the same unrelated failing test, so `pytest -x` stopped
+before any mutated line ran. Mutation testing infers *caught* from *the suite
+went red*, which a suite that is already red satisfies for free. The harness now
+checks that the baseline is green before mutating and refuses to run otherwise,
+and flags it as `SUSPICIOUS` if one test catches everything. With that gate the
+honest score was 20/22, and both survivors were real — one a masked rule, one an
+actual design flaw in the circuit breaker's half-open handling. Full account in
+[results/mutation.txt](results/mutation.txt) and entry 12 of
 [ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md).
 
 ### The zero-violation claim is not vacuous
@@ -595,6 +605,104 @@ and ledger integrity.
 
 ---
 
+## Production hardening
+
+Three things this needed before it could run anywhere near real money. Each one
+is measured or provably inert rather than asserted.
+
+### Churn is priced, not just capped
+
+The limitation section used to say over-messaging was *bounded by hard caps, not
+priced*. It is now priced:
+
+```
+EV = P(recover) x amount_at_risk - action_cost - P(churn) x LTV
+```
+
+`P(churn)` is zero for anything the customer cannot perceive — a rail switch, a
+wait, a stop — and compounds geometrically with recent contact, because the
+fourth message in a week is not four times as irritating as the first, it is the
+one that gets you blocked. The exponent is capped: without that, a runaway
+contact counter prices every action out of reach and the engine quietly stops
+acting for anybody.
+
+**LTV defaults to zero, and zero means _not supplied_.** So the churn term
+vanishes unless a merchant opts in by providing the data, which is why adding
+this moved no published figure — the backtest arm table is byte-identical to the
+one committed before it existed, and a test asserts that on every candidate of
+every event.
+
+When LTV *is* supplied, `python scripts/churn_sensitivity.py` shows where the
+engine starts refusing to message:
+
+```
+           LTV |  0 msgs |  2 msgs |  4 msgs |  6 msgs
+         unset |       0 |       0 |       0 |       0
+      1,000.00 |       5 |      11 |      25 |      57
+   1,00,000.00 |     500 |   1,125 |    STOP |    STOP
+   5,00,000.00 |    STOP |    STOP |    STOP |    STOP
+```
+
+Rupees of expected relationship damage on a Rs 5,000 receivable. A Rs 5,00,000
+customer is never messaged over it; a Rs 1,000 customer is pursued to six.
+
+**The base rates are assumptions, not measurements.** Nobody here has observed
+the churn probability of an SMS. What the machinery provides is somewhere to put
+the number — overridable per-merchant under `[churn]` in a policy pack — and a
+sweep for testing how much the answer depends on it.
+
+### The inference API cannot stall payments
+
+`recoup/llm/breaker.py` puts a circuit breaker between the decision path and the
+model. Three consecutive transport failures open it; while open, calls do not
+touch the network at all and are served by the offline provider immediately.
+After a ten-second cooldown one probe is admitted — exactly one, or a burst of
+traffic at the moment the cooldown expires stampedes an API that is still down.
+Success closes the circuit; failure re-opens it and restarts the cooldown.
+
+The failure mode this is really built for is not an API that errors, which is
+easy, but one that goes *slow*: a twenty-second timeout multiplied by a retry
+multiplied by every event in a batch is how a degraded dependency becomes a
+stalled queue.
+
+Retries and the breaker are deliberately separate from `MAX_LLM_ATTEMPTS`, which
+gets conflated with them. Retry re-sends a request that got no answer. The
+breaker decides whether to attempt transport at all. `MAX_LLM_ATTEMPTS` refuses
+to re-prompt a model that *did* answer just because the confidence was low —
+re-asking until you like the reply is not inference.
+
+Clock, sleep and jitter are all injected, so the tests drive a fake clock and
+never sleep. A component reaching for wall-clock time would be the only
+nondeterminism in the package.
+
+### Shadow mode, for the run that has not happened yet
+
+Every recovery number here comes from a simulator. The honest next step is a
+shadow run against real failure streams, and `recoup/shadow.py` is that
+mechanism: both policies decide, **only the legacy rulebook's action is
+returned**, and the agent's proposal is logged and discarded.
+
+There is deliberately no branch in `ShadowRunner.decide` that can return the
+agent's decision. The safety property is structural, not conditional. Any
+exception from the agent is caught, recorded on the log line, and the legacy
+action is returned unchanged.
+
+Against the real engine over 400 events:
+
+```
+events 400 · diverged 280 (70.0%) · recoup_errors 0
+legacy p50 0.027ms · recoup p50 0.263ms · recoup p95 0.418ms
+```
+
+**One honest limit.** A synchronous Python call cannot be interrupted partway
+through, so `budget_ms` is a *soft* deadline: an overrun is detected and flagged
+after the fact, not prevented. Crashes are contained in microseconds and that is
+tested; hangs are not, and a hard wall would need the comparison to run off the
+request path entirely. That is the right production shape and it is not
+implemented here, because a fake queue would prove nothing.
+
+---
+
 ## What broke
 
 Full account in **[docs/ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md)**. The two
@@ -650,7 +758,7 @@ scripts/                   stability · learning_curve · ablation · sensitivit
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     325 tests, incl. adversarial + no-leakage
+tests/                     350 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -663,7 +771,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 325 tests
+pytest tests/ -q                         # 350 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?
@@ -696,7 +804,10 @@ python scripts/mutate.py                 # do the tests catch a broken guardrail
   limit, prose-instead-of-tool-call) — so `llm/claude.py` is at 100% coverage.
   What is unverified is the wire to Anthropic's servers, and I won't claim
   otherwise until it has run.
-- **Churn is not in the objective.** Over-messaging is bounded by hard caps, not
-  priced.
+- **Churn is priced but not calibrated.** The objective now carries a
+  `P(churn) x LTV` term, and the base rates in it are assumptions nobody here
+  has measured. The term is inert unless a merchant supplies LTV, so it changes
+  no published figure — but a merchant who switches it on is trusting my guess
+  until they replace it with their own retention data.
 
 MIT licensed.
