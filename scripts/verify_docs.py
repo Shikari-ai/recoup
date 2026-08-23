@@ -26,7 +26,16 @@ DOCS = [ROOT / "README.md"] + sorted((ROOT / "docs").glob("*.md"))
 #: the skip is a visible decision rather than a silent omission.
 SKIP = (
     "git clone", "pip install", "gh ", "curl", "serve", "nohup",
-    "--seeds 8", "scripts/learning_curve", "sensitivity",
+    # Matched on the flag, not the seed count: pinning "--seeds 8" meant that
+    # raising the documented sweep to 30 seeds silently un-skipped it, and this
+    # would have tried to run a forty-minute job under a seven-minute timeout.
+    "--seeds ", "scripts/learning_curve", "sensitivity",
+    # This script is itself a documented command, so without this entry it
+    # executes itself, forever. Each level spawns another and the recursion is
+    # bounded only by the subprocess timeout at the outermost level -- which
+    # presents as a seven-minute hang ending in a traceback, and as a scratch
+    # ledger quietly growing to most of a gigabyte.
+    "scripts/verify_docs",
 )
 
 #: Illustrative snippets rather than commands: shell loops, and placeholders
@@ -89,6 +98,27 @@ def strip_comment(cmd: str) -> str:
     return "".join(out).strip()
 
 
+#: Documented ledger writes are redirected here so a verification run cannot
+#: clobber the committed audit trail. It is append-only by design, so it must be
+#: cleared per run -- otherwise it accumulates across every local invocation and
+#: quietly grows to hundreds of megabytes. (It did: 964 MB before this was
+#: noticed. `artifacts/` is gitignored, so it never reached the repository, but
+#: a scratch file with no upper bound is still a bug.)
+SCRATCH_LEDGER = ROOT / "artifacts" / "_verify.jsonl"
+
+#: Per-command ceiling. Nothing documented should take anywhere near this.
+TIMEOUT_S = 420
+
+
+def reset_scratch() -> None:
+    """Remove the scratch ledger so each run starts from an empty chain."""
+    try:
+        if SCRATCH_LEDGER.exists():
+            SCRATCH_LEDGER.unlink()
+    except OSError as exc:  # pragma: no cover - best effort, never fatal
+        print(f"  note  could not clear {SCRATCH_LEDGER.name}: {exc}")
+
+
 def normalise(cmd: str) -> str:
     cmd = strip_comment(cmd)
     for a, b in SHRINK.items():
@@ -96,7 +126,7 @@ def normalise(cmd: str) -> str:
     if cmd.startswith("python -m recoup backtest") and "--events" not in cmd:
         cmd += " --events 300 --quiet"
     if "--ledger" in cmd:
-        cmd = cmd.replace("artifacts/audit.jsonl", "artifacts/_verify.jsonl")
+        cmd = cmd.replace("artifacts/audit.jsonl", str(SCRATCH_LEDGER.relative_to(ROOT)).replace("\\", "/"))
     return cmd
 
 
@@ -144,6 +174,7 @@ def check_headings() -> list[str]:
 
 
 def main() -> int:
+    reset_scratch()
     structural = check_distinct_docs() + check_headings()
     for msg in structural:
         print(f"  DOC   {msg}")
@@ -189,15 +220,22 @@ def main() -> int:
             cmd = cmd.replace("python scripts/", f'"{sys.executable}" scripts/')
             if cmd.startswith("pytest"):
                 cmd = f'"{sys.executable}" -m ' + cmd
-            out = subprocess.run(
-                cmd, shell=True, cwd=ROOT, capture_output=True, text=True, timeout=420
-            )
-            ok = out.returncode == 0
+            try:
+                out = subprocess.run(
+                    cmd, shell=True, cwd=ROOT, capture_output=True, text=True,
+                    timeout=TIMEOUT_S,
+                )
+                ok, detail = out.returncode == 0, out.stderr[-400:]
+            except subprocess.TimeoutExpired:
+                # A documented command that never returns is a broken promise to
+                # the reader, so report it as a failure rather than letting the
+                # exception take the whole verification run down with it.
+                ok, detail = False, f"did not finish within {TIMEOUT_S}s"
             ran += 1
             print(f"  {'ok  ' if ok else 'FAIL'}  {raw[:72]}")
             if not ok:
                 failed += 1
-                problems.append((str(doc.relative_to(ROOT)), raw, out.stderr[-400:]))
+                problems.append((str(doc.relative_to(ROOT)), raw, detail))
 
     print(f"\n{ran} executed, {skipped} skipped, {failed} failed")
     for doc, cmd, err in problems:
