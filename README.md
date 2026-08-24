@@ -484,7 +484,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-446 tests at 95% coverage is a statement about lines executed, not about whether
+447 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -833,7 +833,7 @@ scripts/                   stability · learning_curve · ablation · ceiling
                            mutate · health_signal · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     446 tests, incl. adversarial + no-leakage
+tests/                     447 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -846,7 +846,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 446 tests
+pytest tests/ -q                         # 447 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?

@@ -270,3 +270,34 @@ def test_a_settlement_with_no_amount_is_a_clean_400(client):
     r = client.post("/webhook/razorpay", json=bad)
     assert r.status_code == 400
     assert "amount" in r.json()["error"]
+
+
+def test_repeated_webhook_delivery_authorises_exactly_one_dispatch(client):
+    """Razorpay redelivers on non-2xx and on timeout. That is routine traffic.
+
+    This failed before: the idempotency key included `execute_at`, which is
+    computed relative to `now` and therefore carries millisecond wall-clock. Every
+    redelivery minted a fresh key, so five identical deliveries authorised three
+    dispatches — on a debit, three charges to the same customer. The key now
+    identifies the receivable and the chosen action, both stable across
+    redeliveries.
+    """
+    body = {
+        "event": "payment.failed",
+        "created_at": 1786000000,
+        "payload": {"payment": {"entity": {
+            "id": "pay_redelivered", "amount": 249900, "currency": "INR",
+            "status": "failed", "method": "upi",
+            "error_reason": "insufficient_funds", "customer_id": "c1",
+        }}},
+    }
+
+    results = [client.post("/webhook/razorpay", json=body).json() for _ in range(6)]
+    keys = {r["idempotency"]["key"] for r in results}
+    authorised = sum(1 for r in results if r["idempotency"]["accepted"])
+
+    assert len(keys) == 1, f"the same webhook produced {len(keys)} different keys: {keys}"
+    assert authorised == 1, (
+        f"{authorised} dispatches authorised for one receivable; a redelivered "
+        "webhook must never become a second debit"
+    )

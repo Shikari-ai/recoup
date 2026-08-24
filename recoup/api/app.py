@@ -338,10 +338,20 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
         # webhooks on non-2xx and on timeout, so the same receivable arriving
         # twice is routine rather than exceptional -- and the second arrival
         # must not become a second debit.
+        #
+        # The key deliberately omits `execute_at`. That field is computed
+        # relative to `now` at decision time, so it carries millisecond
+        # wall-clock: every redelivery minted a fresh key and authorised
+        # another dispatch. Five identical deliveries produced three
+        # authorisations before this was fixed. The key identifies the
+        # receivable and what we decided to do about it -- both stable across
+        # redeliveries of the same webhook -- which is exactly the rule
+        # eval/runner.py already documents: no mutable state in an idempotency
+        # key, because on a replay the mutable part has moved on and the guard
+        # silently lets the duplicate through.
         key = full_key_for(
             event.event_id,
             d.action.kind.value,
-            execute_at=d.action.execute_at,
             rail=d.action.rail.value if d.action.rail else None,
             channel=d.action.channel.value,
         )

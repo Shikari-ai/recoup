@@ -693,6 +693,47 @@ wrote is not coverage of the inputs you accept.*
 
 ---
 
+## 14. A redelivered webhook authorised a second debit
+
+**What happened.** Razorpay redelivers a webhook on any non-2xx and on timeout,
+so the same payload arriving several times is ordinary traffic. Sending one
+identical payload six times authorised **three** dispatches. On a debit, that is
+three charges to one customer.
+
+**Cause.** The idempotency key was built from the decision, including
+``execute_at`` — which is computed relative to ``now``, so it carries
+millisecond wall-clock:
+
+```
+1: exec=21:40:33.824  key=b71e267fa1e9afd9  accepted=True
+2: exec=21:40:33.824  key=b71e267fa1e9afd9  accepted=False
+3: exec=21:40:33.839  key=243150a46e9ff59b  accepted=True   <-- new key, new charge
+```
+
+Each redelivery re-decided, got a fresh timestamp, minted a fresh key, and the
+register — working perfectly — had never seen it before.
+
+**The part that stings.** ``eval/runner.py`` already carries this exact rule,
+written after the same class of bug was found there:
+
+> It must not include mutable state such as "how many actions we have taken so
+> far": on a genuine replay that counter will have moved on, the key will
+> differ, and the guard silently lets the duplicate through.
+
+The rule was documented, the register was correct, the unit tests passed — and
+the API call site violated it anyway, because the rule lived in a comment in a
+different module rather than in anything executable. A convention only holds
+where someone remembers it.
+
+**The fix.** The key now identifies the receivable and the action decided on it,
+both stable across redeliveries. Six identical deliveries now authorise exactly
+one dispatch, pinned by a test that asserts both the key count and the
+authorisation count.
+
+**How it was found.** Not by a test. By asking what Razorpay actually *does* —
+it retries — and then doing that. The unit tests all used a single delivery,
+because that is the shape you write when you are thinking about the happy path.
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`

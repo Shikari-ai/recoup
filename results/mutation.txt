@@ -74,3 +74,23 @@ Mutation spot-check: every row SHOULD be caught (the suite turns red).
  34  caught     hide the reason a compliance pack failed to reload
                 tests/test_state_guard_and_hotreload.py::test_an_invalid_pack_is_r
  35  caught     chase a customer who has a live promise-to-pay
+                tests/test_promise.py::test_a_live_promise_blocks_a_debit_retry
+ 36  caught     keep suppressing after a promise is broken (never act on default)
+                tests/test_promise.py::test_a_lapsed_promise_is_broken_and_no_long
+ 37  caught     blind the model to a live promise-to-pay
+                tests/test_promise.py::test_an_active_promise_raises_the_recovery_
+ 38  caught     let a voice script carry a link nobody can click
+                tests/test_voice.py::test_validate_rejects_a_link_in_a_voice_scrip
+ 39  caught     drop the do-not-call opt-out from voice scripts
+                tests/test_voice.py::test_validate_rejects_a_missing_opt_out
+ 40  caught     call outside the permitted voice-hours window
+                tests/test_voice.py::test_strict_pack_enforces_a_tighter_voice_win
+ 41  caught     treat a paid order as a receivable (chase a customer who paid)
+                tests/test_api.py::test_webhook_rejects_malformed_payloads_with_40
+ 42  caught     let a failure event be laundered into a settlement
+                tests/test_settlement.py::test_settlement_refuses_a_failure_event
+------------------------------------------------------------------------------
+
+42/42 mutations caught
+
+Every safety-critical mutation was caught.
