@@ -212,7 +212,11 @@ def test_webhook_rejects_a_tampered_body(client, monkeypatch):
     [
         (b"{not json", "JSON"),
         (b"{}", "event"),
-        (b'{"event":"payment.captured","payload":{}}', "revenue-at-risk"),
+        # payment.captured is a *settlement* event, so it takes that path and
+        # fails on the missing entity -- still a clean 400, more accurate reason.
+        (b'{"event":"payment.captured","payload":{}}', "entity"),
+        # A genuinely unrecognised event is still refused as not-at-risk.
+        (b'{"event":"payment.authorized","payload":{}}', "revenue-at-risk"),
         (b'{"event":"payment.failed","payload":{"nope":{}}}', "entity"),
     ],
 )
@@ -233,3 +237,36 @@ def test_webhook_never_returns_a_500(client):
             headers={"Content-Type": "application/json"},
         )
         assert r.status_code in (400, 422), f"unexpected {r.status_code} for {body!r}"
+
+
+def test_a_settlement_webhook_closes_the_receivable_instead_of_chasing(client):
+    """Success and failure arrive on the same stream.
+
+    A paid order must close the receivable, not create one. This endpoint used
+    to map `order.paid` to a failure kind, so a customer who had just paid got
+    a payment nudge.
+    """
+    paid = {
+        "event": "order.paid",
+        "created_at": 1786000000,
+        "payload": {"order": {"entity": {
+            "id": "pay_settled", "amount": 249900, "currency": "INR",
+            "status": "paid", "method": "upi", "customer_id": "c1",
+        }}},
+    }
+    d = client.post("/webhook/razorpay", json=paid).json()
+    assert "settlement" in d, f"settlement not recognised: {d}"
+    assert d["settlement"]["reference_id"] == "pay_settled"
+    assert "decision" not in d, "a settled payment must not produce a recovery decision"
+    assert "closed" in d["action"]
+
+
+def test_a_settlement_with_no_amount_is_a_clean_400(client):
+    bad = {
+        "event": "order.paid",
+        "created_at": 1786000000,
+        "payload": {"order": {"entity": {"id": "x", "currency": "INR"}}},
+    }
+    r = client.post("/webhook/razorpay", json=bad)
+    assert r.status_code == 400
+    assert "amount" in r.json()["error"]

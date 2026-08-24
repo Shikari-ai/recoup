@@ -632,6 +632,67 @@ making them assert their own premises out loud.
 
 ---
 
+## 13. A webhook saying "the customer paid" made the agent chase them
+
+**Symptom.** None. Nothing crashed, no test failed, and the reported numbers
+were unaffected — because the simulator never produces this input. It only
+appears against a real Razorpay stream, which is exactly why testing against
+real payload shapes found it and 431 unit tests had not.
+
+**What happened.** Razorpay emits successes and failures on the *same* webhook
+stream. `EVENT_TO_KIND` — the table that decides what a webhook means — mapped
+two success events to failure kinds:
+
+```
+"order.paid":           RiskKind.PAYMENT_FAILED           # the order was PAID
+"subscription.charged": RiskKind.SUBSCRIPTION_CHARGE_FAILED  # the cycle SUCCEEDED
+```
+
+So a webhook whose entire meaning is *"this customer has paid you"* was ingested
+as a receivable at risk. I drove it end to end to see how far the mistake
+travelled, and it travelled all the way:
+
+```
+ingested a SUCCESS webhook as: kind=payment_failed  amount=249900
+agent decision on a PAID order: send_nudge
+  -> CHASING A CUSTOMER WHO ALREADY PAID
+```
+
+A payment reminder, to somebody who had just paid. In production that is a
+support ticket at best and a chargeback dispute at worst, and it is precisely
+the harm the pre-dispatch state guard was built to prevent — arriving one layer
+*earlier* than the guard sits, through the front door, wearing a lanyard.
+
+**How it was found.** Not by a test failing. By asking a question nobody had
+asked: the ingest layer *declares* eight event types and eight payment methods,
+and the test suite only ever exercised two of each. So I drove every declared
+event and method through the real pipeline and read the output. Six event types
+had never been executed even once. Two of them were wrong.
+
+**The fix, and why it is more than a deletion.** Deleting the two lines would
+have stopped the harm and thrown away the signal. A success event is not noise
+— it is the single most useful thing a recovery system can hear, because it is
+how you learn a customer paid **out of band**. `state_guard.py` already refuses
+to dispatch against a settled receivable, but it could only ever know that if
+something told it. Nothing did.
+
+So success events became a first-class input: `SETTLEMENT_EVENTS`,
+`settlement_from_webhook()`, and an API branch that marks the receivable
+resolved and returns *"receivable closed; no recovery action will be taken"*.
+The bug and the missing feature turned out to be the same shape, which is why
+the fix closes a loop instead of patching a hole.
+
+**What I take from it.** Every input surface a system *declares* is a promise it
+has to keep, and the ones no test drives are where the promises quietly aren't
+kept. Sixty-six of seventy taxonomy codes, six of eight event types and six of
+eight payment methods had never been executed once. All seventy codes now run
+end to end in a single test — including the assertion that matters most, that a
+terminal failure never produces an action — and every declared event and method
+is parametrised. The lesson generalises past this bug: *coverage of the code you
+wrote is not coverage of the inputs you accept.*
+
+---
+
 ## Two smaller ones
 
 - **Naive vs aware datetimes.** `World.start` defaulted to a naive `datetime`
@@ -686,6 +747,14 @@ should come first.
 can both be correct and completely unconnected, and every unit test will still
 pass. The tests I write least often are the ones that assert a behaviour change
 end to end, and that is exactly the gap an unwired component hides in.
+
+**Coverage of the code you wrote is not coverage of the inputs you accept.**
+Entry 13. The suite was green and the declared input surface was two-thirds
+unexecuted; the gap held a bug that made the agent chase customers who had
+already paid. Enumerating every declared event, method and error code and
+driving them through the real pipeline took one afternoon and found what
+hundreds of unit tests could not, because unit tests check the paths you
+thought of.
 
 **A verification tool needs to assert its own premises.** Entry 12. Mutation
 testing silently assumes a green baseline; `verify_docs.py` silently assumed it

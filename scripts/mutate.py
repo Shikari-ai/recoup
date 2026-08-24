@@ -254,6 +254,17 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "        if not (start <= h < end):",
      "        if False:",
      "call outside the permitted voice-hours window"),
+
+    # -- settlement events ---------------------------------------------------
+    ("recoup/ingest.py",
+     "    return str(payload.get(\"event\") or \"\") in SETTLEMENT_EVENTS",
+     "    return False",
+     "treat a paid order as a receivable (chase a customer who paid)"),
+
+    ("recoup/ingest.py",
+     "    if event_name not in SETTLEMENT_EVENTS:",
+     "    if False:",
+     "let a failure event be laundered into a settlement"),
 ]
 
 

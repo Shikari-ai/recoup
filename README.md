@@ -484,7 +484,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-400 tests at 95% coverage is a statement about lines executed, not about whether
+437 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -622,6 +622,23 @@ It correctly resolves the tokenised card rail (`token_id` ⇒ `card_token`, whic
 changes the compliance surface), classifies `card_expired`, and returns the
 decision with every guardrail verdict and the full candidate ranking.
 
+**Successes are handled too, and they are not receivables.** Razorpay emits
+`order.paid`, `subscription.charged`, `invoice.paid` and friends on the *same*
+stream as failures. Those close a receivable rather than creating one:
+
+```bash
+curl -X POST localhost:8000/webhook/razorpay -H 'Content-Type: application/json' -d '{
+  "event":"order.paid","created_at":1780000000,
+  "payload":{"order":{"entity":{"id":"pay_QxL9mK2vRt8Zab","amount":249900}}}}'
+# -> {"settlement": {...}, "action": "receivable closed; no recovery action will be taken"}
+```
+
+That is the other half of the pre-dispatch state guard: the guard refuses to act
+on a receivable that settled out-of-band, and this is how it finds out. Every
+declared event type, payment method and taxonomy error code — 70 of them — is
+driven end to end in the test suite, including the assertion that a terminal
+failure never produces an action.
+
 The dashboard shows the arm comparison, model reliability, live decision feed
 and ledger integrity.
 
@@ -739,9 +756,22 @@ implemented here, because a fake queue would prove nothing.
 
 ## What broke
 
-Full account in **[docs/ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md)**. The two
-that mattered were both **silent**, both passed every test I had at the time,
-and both invalidated results I had already written down.
+Full account in **[docs/ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md)** — thirteen
+entries. The three that mattered were all **silent**, all passed every test I had
+at the time, and none of them announced themselves.
+
+**0. A webhook saying "the customer paid" made the agent chase them.** Razorpay
+emits successes and failures on the same stream, and `order.paid` and
+`subscription.charged` were mapped to *failure* kinds — so a payment that had
+already succeeded was ingested as a receivable at risk, and the agent sent a
+payment reminder to somebody who had just paid. Nothing crashed and no test
+failed, because the simulator never produces that input. I found it by driving
+every *declared* event type and payment method through the real pipeline and
+reading the output: six of eight event types had never been executed once. The
+fix does more than delete two lines — a success event is how you learn a
+customer paid **out of band**, which is exactly what the pre-dispatch state
+guard needs to hear. Success events are now a first-class input that *closes*
+the receivable. The bug and a missing feature turned out to be the same shape.
 
 **1. The audit ledger recorded nothing, and nothing complained.**
 `AuditLedger` defines `__len__`, so an *empty* ledger is falsy. The runner said
@@ -803,7 +833,7 @@ scripts/                   stability · learning_curve · ablation · ceiling
                            mutate · health_signal · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     400 tests, incl. adversarial + no-leakage
+tests/                     437 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -816,7 +846,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 400 tests
+pytest tests/ -q                         # 437 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?

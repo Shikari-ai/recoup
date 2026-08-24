@@ -26,6 +26,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
+import json
+
 from ..domain import rupees
 
 
@@ -42,7 +44,13 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
 
     from ..eval.backtest import _fresh, _warm_health, backtest
     from ..eval.report import ARM_NOTES
-    from ..ingest import WebhookError, from_webhook_bytes
+    from ..ingest import (
+        WebhookError,
+        from_webhook_bytes,
+        is_settlement,
+        settlement_from_webhook,
+        verify_signature,
+    )
     from ..hotreload import HotReloadingPack
     from ..idempotency import IdempotencyRegister, full_key_for
     from ..policy import RecoveryPolicy, RuleBasedPolicy, default_classifier
@@ -278,12 +286,40 @@ def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
         """
         raw = await request.body()
         secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET")
+        now = datetime.now(timezone.utc)
+
+        # Success events arrive on the same stream as failures. They are not
+        # receivables -- they are the news that a receivable is closed. Handling
+        # them here is what lets state_guard.py know a customer paid
+        # out-of-band, so a queued action never fires at someone who has
+        # already settled.
+        try:
+            parsed = json.loads(raw.decode("utf-8")) if raw else None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            parsed = None
+        if is_settlement(parsed if isinstance(parsed, dict) else {}):
+            if secret and not verify_signature(raw, x_razorpay_signature or "", secret):
+                return JSONResponse({"error": "signature verification failed"}, status_code=400)
+            try:
+                s = settlement_from_webhook(parsed)
+            except WebhookError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=400)
+            state["store"].mark_resolved(s.reference_id, s.occurred_at)
+            return JSONResponse({
+                "signature_verified": bool(secret),
+                "settlement": {
+                    "event": s.event,
+                    "reference_id": s.reference_id,
+                    "amount": rupees(s.amount_paise),
+                },
+                "action": "receivable closed; no recovery action will be taken",
+            })
+
         try:
             event = from_webhook_bytes(raw, x_razorpay_signature, secret)
         except WebhookError as exc:
             return JSONResponse({"error": str(exc)}, status_code=400)
 
-        now = datetime.now(timezone.utc)
         state["store"].mark_seen(event.event_id, event.occurred_at)
 
         # Pick up a pack edited on disk since the last request. Throttled to

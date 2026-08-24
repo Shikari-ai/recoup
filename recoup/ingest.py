@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,16 +37,36 @@ METHOD_TO_RAIL: dict[str, Rail] = {
 }
 
 #: Webhook event names -> why the revenue is at risk.
+#:
+#: Only *failure* events belong here. Razorpay also emits success events on the
+#: same stream, and mapping one of those to a risk kind is not a cosmetic error:
+#: it manufactures a receivable out of a payment that already succeeded, and the
+#: agent goes and chases a customer who has paid. ``order.paid`` and
+#: ``subscription.charged`` were in this table and did exactly that -- a paid
+#: order produced a ``send_nudge``. They now live in SETTLEMENT_EVENTS below.
 EVENT_TO_KIND: dict[str, RiskKind] = {
     "payment.failed": RiskKind.PAYMENT_FAILED,
-    "order.paid": RiskKind.PAYMENT_FAILED,
     "subscription.pending": RiskKind.SUBSCRIPTION_CHARGE_FAILED,
     "subscription.halted": RiskKind.SUBSCRIPTION_CHARGE_FAILED,
-    "subscription.charged": RiskKind.SUBSCRIPTION_CHARGE_FAILED,
     "invoice.expired": RiskKind.INVOICE_OVERDUE,
     "payment_link.expired": RiskKind.INVOICE_OVERDUE,
     "checkout.abandoned": RiskKind.CHECKOUT_ABANDONED,
 }
+
+#: Webhook event names that mean *the money arrived*.
+#:
+#: These are the other half of the loop. ``state_guard.py`` refuses to dispatch
+#: against a receivable that settled out-of-band, but it can only know that if
+#: something tells it -- and this is what tells it. A customer who pays through
+#: any route Razorpay observes produces one of these, and the receivable is
+#: closed before the next queued action can fire at them.
+SETTLEMENT_EVENTS: frozenset[str] = frozenset({
+    "payment.captured",
+    "order.paid",
+    "subscription.charged",
+    "invoice.paid",
+    "payment_link.paid",
+})
 
 
 class WebhookError(ValueError):
@@ -105,6 +126,35 @@ def _issuer(entity: dict[str, Any]) -> str | None:
     )
 
 
+def _amount_paise(raw: Any, *, what: str) -> int:
+    """Parse an amount into positive integer paise, or refuse.
+
+    Razorpay reports paise already, so no scaling happens here -- only
+    validation. Three ways this goes wrong in real traffic, all refused:
+
+    * **Unparseable** (``"lots"``, ``None`` sneaking through a nested null).
+    * **Negative.** A refund or an adjustment can carry one, and it used to be
+      accepted. It then reached ``math.log1p(rupee)`` during feature extraction
+      and raised ``ValueError: math domain error`` -- an unhandled 500 on a
+      public endpoint, from a payload someone else controls.
+    * **Zero.** Parses fine and means nothing: there is no revenue at risk, so
+      there is nothing to recover and every expected value is zero.
+
+    Refusing here rather than defending downstream keeps the invariant in one
+    place: past this function, an amount is a positive number of paise.
+    """
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise WebhookError(f"{what} amount {raw!r} is not an integer") from exc
+    if value <= 0:
+        raise WebhookError(
+            f"{what} amount is {value} paise; a receivable must be a positive "
+            f"amount of money at risk"
+        )
+    return value
+
+
 def _error_fields(entity: dict[str, Any]) -> tuple[str | None, str | None]:
     """Razorpay's most specific failure signal, with a documented fallback order.
 
@@ -119,6 +169,69 @@ def _error_fields(entity: dict[str, Any]) -> tuple[str | None, str | None]:
     if chosen in (None, "", "null"):
         chosen = None
     return (str(chosen) if chosen else None, str(desc) if desc else None)
+
+
+@dataclass(frozen=True, slots=True)
+class Settlement:
+    """A webhook saying the money arrived, normalised.
+
+    Carries the same identifiers a RiskEvent would, so a caller can close the
+    matching receivable without re-parsing the payload.
+    """
+
+    event: str
+    reference_id: str
+    amount_paise: int
+    occurred_at: datetime
+    merchant_id: str = "mch_live"
+    customer_id: str | None = None
+
+
+def is_settlement(payload: dict[str, Any]) -> bool:
+    """True if this webhook reports money arriving rather than failing."""
+    if not isinstance(payload, dict):
+        return False
+    return str(payload.get("event") or "") in SETTLEMENT_EVENTS
+
+
+def settlement_from_webhook(
+    payload: dict[str, Any], *, merchant_id: str = "mch_live"
+) -> Settlement:
+    """Normalise a success webhook into a Settlement.
+
+    Raises ``WebhookError`` for anything that is not a settlement event, so a
+    caller cannot accidentally treat a failure as a payment.
+    """
+    if not isinstance(payload, dict):
+        raise WebhookError(f"payload must be a JSON object, got {type(payload).__name__}")
+    event_name = str(payload.get("event") or "")
+    if event_name not in SETTLEMENT_EVENTS:
+        raise WebhookError(f"event {event_name!r} is not a settlement signal")
+
+    _entity_type, entity = _entity(payload)
+    amount = entity.get("amount")
+    if amount is None:
+        raise WebhookError("settlement entity has no amount")
+    amount_paise = _amount_paise(amount, what="settlement")
+
+    ref = entity.get("id") or entity.get("order_id") or entity.get("subscription_id")
+    if not ref:
+        raise WebhookError("settlement entity has no id to match a receivable on")
+
+    created = payload.get("created_at")
+    occurred = (
+        datetime.fromtimestamp(int(created), tz=timezone.utc)
+        if isinstance(created, (int, float))
+        else datetime.now(timezone.utc)
+    )
+    return Settlement(
+        event=event_name,
+        reference_id=str(ref),
+        amount_paise=amount_paise,
+        occurred_at=occurred,
+        merchant_id=merchant_id,
+        customer_id=str(entity.get("customer_id")) if entity.get("customer_id") else None,
+    )
 
 
 def from_webhook(
@@ -148,6 +261,7 @@ def from_webhook(
     amount = entity.get("amount")
     if amount is None:
         raise WebhookError(f"{entity_type} entity has no amount")
+    amount_paise = _amount_paise(amount, what=entity_type)
 
     created = payload.get("created_at") or entity.get("created_at")
     occurred = (
@@ -165,7 +279,7 @@ def from_webhook(
         event_id=str(entity.get("id") or f"{entity_type}_unknown"),
         merchant_id=merchant_id,
         kind=kind,
-        amount_paise=int(amount),  # Razorpay already reports paise
+        amount_paise=amount_paise,  # validated positive paise; see _amount_paise
         rail=rail,
         occurred_at=occurred,
         customer=customer
