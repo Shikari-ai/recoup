@@ -270,3 +270,115 @@ def test_a_validated_amount_never_reaches_the_model_as_a_crash():
         ev = from_webhook(wh("payment.failed", amount=amount))
         d = pol.decide(ev, ev.occurred_at + timedelta(minutes=5))
         assert d.action is not None
+
+
+# ---------------------------------------------------------------------------
+# The signature boundary, adversarially
+# ---------------------------------------------------------------------------
+
+
+def _signed(body: bytes, secret: str) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "mutate,label",
+    [
+        (lambda s: "0" * 64, "wrong digest"),
+        (lambda s: "", "empty"),
+        (lambda s: None, "absent"),
+        (lambda s: s.upper(), "case-flipped"),
+        (lambda s: " " + s, "leading whitespace"),
+        (lambda s: s[:32], "truncated"),
+    ],
+)
+def test_a_bad_signature_is_always_refused(mutate, label):
+    """Every way a signature can be wrong must be refused.
+
+    This is the one boundary where a silent regression is catastrophic: an
+    unverified webhook treated as verified is a way for anyone on the internet
+    to make the system move money.
+    """
+    import json as _json
+
+    from recoup.ingest import from_webhook_bytes
+
+    secret = "whsec_test_secret"
+    body = _json.dumps({
+        "event": "payment.failed", "created_at": 1786000000,
+        "payload": {"payment": {"entity": {
+            "id": "p", "amount": 249900, "currency": "INR", "method": "card",
+            "error_reason": "insufficient_funds", "customer_id": "c",
+        }}},
+    }).encode()
+
+    with pytest.raises(WebhookError, match="signature"):
+        from_webhook_bytes(body, mutate(_signed(body, secret)), secret)
+
+
+def test_a_tampered_body_fails_its_own_signature():
+    """The signature must cover the raw bytes, not the re-serialised object."""
+    import json as _json
+
+    from recoup.ingest import from_webhook_bytes
+
+    secret = "whsec_test_secret"
+    body = _json.dumps({
+        "event": "payment.failed", "created_at": 1786000000,
+        "payload": {"payment": {"entity": {
+            "id": "p", "amount": 249900, "currency": "INR", "method": "card",
+            "error_reason": "insufficient_funds", "customer_id": "c",
+        }}},
+    }).encode()
+    sig = _signed(body, secret)
+
+    with pytest.raises(WebhookError, match="signature"):
+        from_webhook_bytes(body + b" ", sig, secret)
+
+
+def test_signature_comparison_is_constant_time():
+    """A timing side channel cannot be caught by a functional test.
+
+    `hmac.compare_digest(a, b)` and `a == b` accept and reject exactly the same
+    inputs, so every behavioural assertion in this file passes either way. The
+    difference is that `==` short-circuits on the first differing byte and leaks
+    the digest one byte at a time to anyone who can measure response latency.
+
+    Since the behaviour is identical, the code itself is what gets asserted:
+    the comparison must go through the constant-time primitive. Parsed with
+    `ast` rather than grepped, so a comment mentioning compare_digest cannot
+    satisfy it.
+    """
+    import ast
+    import pathlib
+
+    src = pathlib.Path("recoup/ingest.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+
+    fn = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "verify_signature"),
+        None,
+    )
+    assert fn is not None, "verify_signature has been renamed or removed"
+
+    calls = {
+        ast.unparse(n.func) for n in ast.walk(fn) if isinstance(n, ast.Call)
+    }
+    assert any("compare_digest" in c for c in calls), (
+        "verify_signature no longer uses hmac.compare_digest; a plain == leaks "
+        f"the expected digest through response timing. Calls found: {calls}"
+    )
+
+    # And no bare equality on the digest, which is the shape the mutation takes.
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Compare) and any(
+            isinstance(op, ast.Eq) for op in node.ops
+        ):
+            names = ast.unparse(node)
+            assert "signature" not in names or "compare_digest" in names, (
+                f"non-constant-time comparison of the signature: {names}"
+            )

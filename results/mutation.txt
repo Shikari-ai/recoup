@@ -46,3 +46,31 @@ Mutation spot-check: every row SHOULD be caught (the suite turns red).
  20  caught     execute the AGENT's action instead of the legacy one
                 tests/test_hardening.py::test_shadow_returns_the_legacy_action_and
  21  caught     let an agent crash escape the shadow boundary
+                tests/test_hardening.py::test_shadow_fails_open_when_the_agent_cra
+ 22  caught     never report divergence between the two paths
+                tests/test_hardening.py::test_shadow_returns_the_legacy_action_and
+ 23  caught     send cold-start merchants to the model anyway
+                tests/test_router_and_idempotency.py::test_cold_start_sends_everyt
+ 24  caught     send 100% of warm-up traffic to the model instead of 20%
+                tests/test_router_and_idempotency.py::test_warmup_splits_roughly_e
+ 25  caught     make routing random instead of sticky per receivable
+                tests/test_router_and_idempotency.py::test_assignment_is_sticky_an
+ 26  caught     accept every claim (duplicate dispatches execute twice)
+                tests/test_idempotency.py::test_first_claim_succeeds_and_second_fa
+ 27  caught     drop the attempt number from the idempotency key
+                tests/test_router_and_idempotency.py::test_key_matches_the_documen
+ 28  caught     never expire keys (a legitimate re-attempt is blocked forever)
+                tests/test_router_and_idempotency.py::test_the_window_expires_afte
+ 29  caught     act on a receivable the customer already settled out-of-band
+                tests/test_settlement.py::test_a_settlement_closes_the_receivable_
+ 30  caught     act on a receivable the source of truth has never heard of
+                tests/test_state_guard_and_hotreload.py::test_an_unknown_receivabl
+ 31  caught     skip the dispatch-time state check in the runner
+                tests/test_state_guard_and_hotreload.py::test_the_runner_actually_
+ 32  caught     reparse the pack on every check even when unchanged
+                tests/test_state_guard_and_hotreload.py::test_quiet_hours_change_o
+ 33  caught     make the file fingerprint constant (edits never detected)
+                tests/test_state_guard_and_hotreload.py::test_quiet_hours_change_o
+ 34  caught     hide the reason a compliance pack failed to reload
+                tests/test_state_guard_and_hotreload.py::test_an_invalid_pack_is_r
+ 35  caught     chase a customer who has a live promise-to-pay

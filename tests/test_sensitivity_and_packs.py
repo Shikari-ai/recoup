@@ -88,6 +88,43 @@ def test_packs_are_interchangeable_without_engine_changes():
         assert len(engine._RULES) == 21, "gate set differs between packs"
 
 
+@pytest.mark.slow
+def test_the_strict_pack_actually_binds_and_costs_recovery():
+    """Same engine, same events, stricter rules -- and it must show.
+
+    Asserting the two packs load with the same gate count says nothing about
+    whether the stricter one *does* anything; a pack that parses but never
+    binds is decoration. This runs the identical scenario under both and pins
+    the trade-off the project claims to price: tighter rules mean materially
+    less contact and materially less recovered, with zero violations either way.
+    """
+    from recoup.eval.backtest import backtest
+    from recoup.sim.generator import ScenarioConfig
+
+    cfg = ScenarioConfig(n_events=1200, days=30, seed=42)
+    out = {}
+    for path, label in ((DEFAULT_PACK, "default"), (STRICT, "strict")):
+        r = backtest(cfg, load_pack(path), verbose=False)
+        arm = r.arms["recoup"]
+        out[label] = (
+            arm.attributed_paise,
+            arm.messages_composed,
+            sum(len(a.violations) for a in r.arms.values()),
+        )
+
+    d_paise, d_msgs, d_viol = out["default"]
+    s_paise, s_msgs, s_viol = out["strict"]
+
+    assert d_viol == 0 and s_viol == 0, "a pack that violates its own rules is broken"
+    assert s_msgs < d_msgs, (
+        f"strict pack sent {s_msgs} messages vs default {d_msgs}; it is not binding"
+    )
+    assert s_paise < d_paise, (
+        "strict recovered no less than default, so the tighter rules cost nothing "
+        "-- either they do not bind or the comparison is not measuring them"
+    )
+
+
 def test_a_pack_missing_a_required_key_fails_loudly(tmp_path):
     """Failing open because a key was misspelled is worse than no rule."""
     bad = tmp_path / "bad.toml"

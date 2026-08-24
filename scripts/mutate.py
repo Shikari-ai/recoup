@@ -265,6 +265,16 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    if event_name not in SETTLEMENT_EVENTS:",
      "    if False:",
      "let a failure event be laundered into a settlement"),
+
+    ("recoup/ingest.py",
+     "    if value <= 0:",
+     "    if False:",
+     "accept a negative amount (crashes the model with a math domain error)"),
+
+    ("recoup/ingest.py",
+     "    return hmac.compare_digest(expected, signature)",
+     "    return expected == signature",
+     "compare signatures non-constant-time (timing side channel)"),
 ]
 
 
