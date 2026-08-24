@@ -108,6 +108,16 @@ def extract(
     f["hour_sin"] = math.sin(2 * math.pi * hour / 24)
     f["hour_cos"] = math.cos(2 * math.pi * hour / 24)
 
+    # -- promise-to-pay: a commitment is strong evidence, a broken one is a
+    #    warning. All three default to 0.0 when no promise is on record, so this
+    #    block is inert unless a merchant supplies the signal.
+    from .promise import PromiseState, promise_state
+
+    pstate = promise_state(event, now)
+    f["promise_active"] = 1.0 if pstate is PromiseState.ACTIVE else 0.0
+    f["promise_broken"] = 1.0 if pstate is PromiseState.BROKEN else 0.0
+    f["broken_promise_hist"] = min(event.customer.broken_promises, 4) / 4.0
+
     # -- payer history
     seen = event.customer.prior_successes + event.customer.prior_failures
     f["cust_success_rate"] = (event.customer.prior_successes + 1) / (seen + 2)  # Laplace

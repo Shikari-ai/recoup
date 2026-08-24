@@ -401,13 +401,20 @@ Reproducible: same seed → byte-identical results, asserted by
 under differing `PYTHONHASHSEED` and compares output byte-for-byte. CI runs that
 gate on every push, on Python 3.11 and 3.12.
 
-**Compliant escalation** — 19 gates: Visa/Mastercard re-presentment caps, RBI
+**Compliant escalation** — 20 gates: Visa/Mastercard re-presentment caps, RBI
 e-mandate 24h pre-debit notice and AFA threshold, TRAI quiet hours in IST, DND,
 consent, comms frequency caps, spend caps, killswitch. Blocked comms are
 **rescheduled to 09:00, not discarded**. And because a mandate debit needs a
 notice, and a notice *is* a message, the agent sequences **notice → wait 24h →
 debit** on its own — not a hardcoded workflow, just the only ordering the
 guardrails permit.
+
+**Promise-to-pay** — when a customer commits to a date, the agent holds off:
+no debit, no message, until the date passes. A kept promise costs nothing; a
+broken one lifts the hold, resumes action, and warrants escalation. A live
+promise is also a recovery signal to the model, and a history of broken ones
+discounts it. Inert unless the commitment is recorded — same opt-in discipline
+as churn. `scripts/promise_demo.py` shows the three states side by side.
 
 **Stopping rules** — terminal classes stop permanently; per-class attempt caps;
 EV and probability floors; 21-day age cap; deadline enforcement; 3 actions per
@@ -468,7 +475,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-367 tests at 95% coverage is a statement about lines executed, not about whether
+382 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -741,7 +748,7 @@ recoup/
 ├── issuer_health.py  Wilson-bounded outage detection, strictly causal
 ├── propensity.py     Features + logistic regression + calibration
 ├── policy.py         EV ranking, candidate generation, 3 baselines
-├── guardrails.py     19 gates. Absolute veto. No model, ever
+├── guardrails.py     20 gates. Absolute veto. No model, ever
 ├── policypack.py     Validated loader for the TOML rule pack
 ├── ledger.py         Hash-chained append-only audit trail
 ├── ingest.py         Razorpay webhooks → RiskEvent, HMAC verified
@@ -758,7 +765,7 @@ scripts/                   stability · learning_curve · ablation · sensitivit
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     367 tests, incl. adversarial + no-leakage
+tests/                     382 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -771,7 +778,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 367 tests
+pytest tests/ -q                         # 382 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?

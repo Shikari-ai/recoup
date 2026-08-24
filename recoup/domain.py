@@ -211,6 +211,15 @@ class CustomerContext:
     #: decisioning by populating this field, and gets the old behaviour by
     #: leaving it alone. See recoup/churn.py.
     ltv_paise: int = 0
+    #: When this customer has committed to pay by, if they have. ``None`` means
+    #: no promise on record -- the default and inert case. While the date is in
+    #: the future the recovery engine holds off; once it passes unpaid the
+    #: receivable becomes actionable again with escalation. See recoup/promise.py.
+    promise_to_pay_due: datetime | None = None
+    #: How many past promises this customer has broken. A trust signal, not a
+    #: punishment: it discounts modelled recovery probability, it does not bar
+    #: action.
+    broken_promises: int = 0
 
 
 @dataclass(frozen=True, slots=True)

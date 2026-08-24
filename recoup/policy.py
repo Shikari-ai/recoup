@@ -127,6 +127,10 @@ def default_classifier(enable_triage: bool = True) -> Classifier:
 #: consent. Waiting on those is a re-decision loop that burns CPU and ledger
 #: records for twenty-one days and then stops anyway.
 TRANSIENT_RULES = frozenset({
+    # A live promise-to-pay clears the moment its date passes, so a receivable
+    # blocked only by it should WAIT and revisit -- not STOP and be abandoned
+    # before the promise can even be kept or broken.
+    "promise.active",
     "taxonomy.min_backoff",
     "comms.quiet_hours",
     "comms.min_gap",

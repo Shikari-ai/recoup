@@ -55,7 +55,7 @@ rule, because it looks like it is working.
 
 ---
 
-## The nineteen gates
+## The twenty gates
 
 Evaluated in order, cheapest and most categorical first, so an audit log shows
 the *most fundamental* reason an action was refused at the top.
@@ -119,6 +119,14 @@ wrong sends 3am messages — both a compliance problem and a very fast way to
 lose a customer. The frequency cap also counts messages `comms_sent_7d` that
 arrived from *other* systems, so the agent cannot fill a quota someone else
 already spent.
+
+### Promise-to-pay
+
+| Gate | Rule |
+|---|---|
+| `promise.active` | While a customer's promise-to-pay date is in the future, no debit and no message; `wait`, `stop` and `escalate` remain permitted |
+
+A customer who has said they will pay by a date must not be debited early or nagged in the meantime — that is how someone who was going to pay decides to dispute instead. The hold lifts the moment the date passes: a kept promise costs nothing, a broken one becomes actionable again and warrants escalation, because the soft path was already tried. The signal defaults to absent, so this gate is inert unless a merchant records the commitment. See `recoup/promise.py`.
 
 ### Blast radius
 

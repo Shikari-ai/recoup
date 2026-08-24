@@ -214,14 +214,30 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "reparse the pack on every check even when unchanged"),
 
     ("recoup/hotreload.py",
-     "    st = os.stat(path)\n    return st.st_mtime_ns, st.st_size",
-     "    st = os.stat(path)\n    return (0, 0)",
+     "    data = path.read_bytes()\n    return len(data), hashlib.sha256(data).hexdigest()",
+     "    data = path.read_bytes()\n    return (0, \"\")",
      "make the file fingerprint constant (edits never detected)"),
 
     ("recoup/hotreload.py",
      "            self.failed_reloads += 1\n            self.last_error = str(exc)",
      "            self.failed_reloads += 1\n            self.last_error = None",
      "hide the reason a compliance pack failed to reload"),
+
+    # -- promise-to-pay -----------------------------------------------------
+    ("recoup/guardrails.py",
+     "        if state is PromiseState.ACTIVE:",
+     "        if False:",
+     "chase a customer who has a live promise-to-pay"),
+
+    ("recoup/promise.py",
+     "    if now < due:\n        return PromiseState.ACTIVE\n    return PromiseState.BROKEN",
+     "    if due is not None:\n        return PromiseState.ACTIVE\n    return PromiseState.BROKEN",
+     "keep suppressing after a promise is broken (never act on default)"),
+
+    ("recoup/propensity.py",
+     "    f[\"promise_active\"] = 1.0 if pstate is PromiseState.ACTIVE else 0.0",
+     "    f[\"promise_active\"] = 0.0",
+     "blind the model to a live promise-to-pay"),
 ]
 
 

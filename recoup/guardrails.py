@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from .promise import PromiseState, promise_state
 from .domain import (
     CARD_NETWORK_RAILS,
     COMMS_ACTIONS,
@@ -306,6 +307,32 @@ class GuardrailEngine:
             )
         return GuardrailVerdict("emandate.afa_threshold", True)
 
+    def _promise_active(self, e, c, a, now) -> GuardrailVerdict | None:
+        """Hold off every outward action while a promise-to-pay is live.
+
+        A customer who has said they will pay by a date must not be debited
+        early or messaged in the meantime. Applies to debits and comms;
+        ``WAIT``, ``STOP`` and ``ESCALATE_HUMAN`` are always permitted, so the
+        engine can revisit at the promised date or hand off, but never chase.
+
+        The check is on ``now``, the decision time, not ``a.execute_at``: an
+        action scheduled for after the promise lapses is judged on the state at
+        the moment it lapses, when the task is next decided, not pre-authorised
+        now against a promise that has not yet expired.
+        """
+        if a.kind in (ActionKind.WAIT, ActionKind.STOP, ActionKind.ESCALATE_HUMAN):
+            return None
+        state = promise_state(e, now)
+        if state is PromiseState.ACTIVE:
+            due = e.customer.promise_to_pay_due
+            return GuardrailVerdict(
+                "promise.active",
+                False,
+                f"customer promised to pay by {due.isoformat() if due else '?'}; "
+                f"holding off until then",
+            )
+        return GuardrailVerdict("promise.active", True, state.value)
+
     def _comms_consent(self, e, c, a, now) -> GuardrailVerdict | None:
         if a.kind not in COMMS_ACTIONS:
             return None
@@ -418,6 +445,7 @@ class GuardrailEngine:
     _RULES = (
         _killswitch,
         _terminal_class,
+        _promise_active,
         _schedule_sanity,
         _deadline,
         _max_age,

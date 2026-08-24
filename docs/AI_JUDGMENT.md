@@ -21,7 +21,7 @@ a language model:
 
 ### Compliance gates — never, under any circumstance
 
-`recoup/guardrails.py` contains no model call and never will. Nineteen gates
+`recoup/guardrails.py` contains no model call and never will. Twenty gates
 decide whether an action may execute: card-scheme retry caps, RBI pre-debit
 notice, AFA thresholds, TRAI quiet hours, DND, comms frequency, stopping rules,
 spend caps, killswitch.

@@ -25,15 +25,16 @@ all. The cost is that a change can take up to a second to appear, which for a
 compliance parameter edited by a human is not a cost at all. Set the interval to
 0 to check every call, which the tests do.
 
-**Change detection uses ``st_mtime_ns`` and size, not ``st_mtime``.** Second-
-granularity timestamps are still real on some filesystems, and two edits inside
-the same second are exactly what happens when somebody is iterating on a config
-during an incident. Comparing nanoseconds and size catches the case a
-whole-second mtime misses.
+**Change detection hashes the file contents, it does not trust the mtime.**
+A timestamp-and-size fingerprint misses a same-size edit that lands within the
+filesystem's mtime resolution -- which is exactly a compliance value being
+flipped back and forth while someone iterates during an incident. A content
+hash cannot miss it, and the throttle keeps the extra read to once per second.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import threading
@@ -49,10 +50,23 @@ log = logging.getLogger("recoup.hotreload")
 DEFAULT_CHECK_INTERVAL_S = 1.0
 
 
-def _fingerprint(path: Path) -> tuple[int, int]:
-    """(mtime_ns, size). Two edits in one second differ here, unlike mtime."""
-    st = os.stat(path)
-    return st.st_mtime_ns, st.st_size
+def _fingerprint(path: Path) -> tuple[int, str]:
+    """(size, sha256-of-contents). Detects any change, on any filesystem.
+
+    An earlier version fingerprinted on ``(st_mtime_ns, st_size)`` and had a
+    real bug: two edits that keep the file the same size and land within the
+    filesystem's mtime resolution produce an identical fingerprint and the
+    change is missed. On Linux's nanosecond mtime that is near-impossible; on
+    a coarser-resolution filesystem it is exactly what happens when someone
+    changes ``quiet_hours_start_local = 21`` to ``= 19`` during an incident --
+    same length, back to back. Hashing the contents cannot miss it.
+
+    The cost is a read instead of a stat, but the throttle in ``get`` already
+    bounds this to at most once per ``check_interval_s``, so it is a read per
+    second, not a read per compliance evaluation.
+    """
+    data = path.read_bytes()
+    return len(data), hashlib.sha256(data).hexdigest()
 
 
 class HotReloadingPack:

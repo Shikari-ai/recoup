@@ -73,8 +73,14 @@ Mutation spot-check: every row SHOULD be caught (the suite turns red).
                 tests/test_state_guard_and_hotreload.py::test_quiet_hours_change_o
  34  caught     hide the reason a compliance pack failed to reload
                 tests/test_state_guard_and_hotreload.py::test_an_invalid_pack_is_r
+ 35  caught     chase a customer who has a live promise-to-pay
+                tests/test_promise.py::test_a_live_promise_blocks_a_debit_retry
+ 36  caught     keep suppressing after a promise is broken (never act on default)
+                tests/test_promise.py::test_a_lapsed_promise_is_broken_and_no_long
+ 37  caught     blind the model to a live promise-to-pay
+                tests/test_promise.py::test_an_active_promise_raises_the_recovery_
 ------------------------------------------------------------------------------
 
-34/34 mutations caught
+37/37 mutations caught
 
 Every safety-critical mutation was caught.

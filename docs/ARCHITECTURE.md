@@ -51,7 +51,7 @@ Simulator ─────────-┘                          │
                                            ▼
                         ┌──────────────────────────────────────────┐
                         │ GATE              guardrails.py          │
-                        │  19 gates. Absolute veto. No model.      │
+                        │  20 gates. Absolute veto. No model.      │
                         │  policies/*.toml — data, not code        │
                         └──────────────────┬───────────────────────┘
                                            ▼
@@ -126,7 +126,7 @@ all consume real events unchanged — which is the point of the layering.
 | `issuer_health.py` | Rolling per-issuer health, Wilson-bounded outage detection (inert at this volume) | — |
 | `propensity.py` | Features + logistic regression + calibration metrics | — |
 | `policy.py` | Candidate generation, EV ranking, the 3 baselines | — |
-| `guardrails.py` | 19 compliance/safety gates. Absolute veto | — |
+| `guardrails.py` | 20 compliance/safety gates. Absolute veto | — |
 | `policypack.py` | Validated loader for the TOML rule pack | `tomllib` |
 | `store.py` | Counters the guardrails read | — |
 | `ledger.py` | Hash-chained append-only audit trail | — |
