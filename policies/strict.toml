@@ -68,6 +68,8 @@ quiet_hours_end_local   = 10               # 10:00 IST
 timezone_offset_minutes = 330
 max_messages_per_7d     = 2
 min_gap_between_sends_h = 36
+voice_hours_start_local = 11               # voice only 11:00-18:00 IST,
+voice_hours_end_local   = 18               # tighter than other comms
 dnd_blocked_channels    = ["sms", "voice", "whatsapp", "email"]
 dnd_allowed_channels    = []
 

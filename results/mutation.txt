@@ -79,8 +79,14 @@ Mutation spot-check: every row SHOULD be caught (the suite turns red).
                 tests/test_promise.py::test_a_lapsed_promise_is_broken_and_no_long
  37  caught     blind the model to a live promise-to-pay
                 tests/test_promise.py::test_an_active_promise_raises_the_recovery_
+ 38  caught     let a voice script carry a link nobody can click
+                tests/test_voice.py::test_validate_rejects_a_link_in_a_voice_scrip
+ 39  caught     drop the do-not-call opt-out from voice scripts
+                tests/test_voice.py::test_validate_rejects_a_missing_opt_out
+ 40  caught     call outside the permitted voice-hours window
+                tests/test_voice.py::test_strict_pack_enforces_a_tighter_voice_win
 ------------------------------------------------------------------------------
 
-37/37 mutations caught
+40/40 mutations caught
 
 Every safety-critical mutation was caught.

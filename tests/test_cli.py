@@ -219,3 +219,21 @@ def test_help_lists_every_command(capsys):
     for cmd in ("backtest", "demo", "audit", "verify", "triage", "sensitivity",
                 "serve", "policy"):
         assert cmd in out
+
+
+def test_verify_on_a_missing_file_is_a_clean_error_not_a_traceback(capsys):
+    """A reviewer pointing verify at the wrong path should get a reason, not a
+    stack trace. Exit 2 (usage), distinct from exit 1 (chain fails to verify)."""
+    code, out = run(["verify", "definitely/not/here.jsonl"], capsys)
+    assert code == 2
+    assert "Traceback" not in out
+    assert "no ledger file" in out
+
+
+def test_verify_on_a_malformed_file_is_a_clean_error(tmp_path, capsys):
+    bad = tmp_path / "bad.jsonl"
+    bad.write_text("this is not a ledger\n", encoding="utf-8")
+    code, out = run(["verify", str(bad)], capsys)
+    assert code == 2
+    assert "Traceback" not in out
+    assert "could not read" in out

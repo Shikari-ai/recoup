@@ -55,7 +55,7 @@ rule, because it looks like it is working.
 
 ---
 
-## The twenty gates
+## The twenty-one gates
 
 Evaluated in order, cheapest and most categorical first, so an audit log shows
 the *most fundamental* reason an action was refused at the top.
@@ -113,6 +113,7 @@ against the cap.
 | `comms.quiet_hours` | No sends 21:00–09:00 **IST** (email exempt) |
 | `comms.frequency_cap` | Max 3 messages per customer per rolling 7 days |
 | `comms.min_gap` | Minimum 12h between messages |
+| `comms.voice_hours` | Voice calls only within a tighter daytime window; ``None`` in the default pack (voice follows general comms hours), narrowed in `strict.toml` to 11:00-18:00 |
 
 Quiet hours are evaluated in the recipient's local time, not UTC. Getting that
 wrong sends 3am messages — both a compliance problem and a very fast way to

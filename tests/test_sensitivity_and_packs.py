@@ -85,7 +85,7 @@ def test_packs_are_interchangeable_without_engine_changes():
         pack = load_pack(path)
         store = RecoveryStore()
         engine = GuardrailEngine(pack, store)
-        assert len(engine._RULES) == 20, "gate set differs between packs"
+        assert len(engine._RULES) == 21, "gate set differs between packs"
 
 
 def test_a_pack_missing_a_required_key_fails_loudly(tmp_path):

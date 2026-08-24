@@ -366,24 +366,24 @@ python -m recoup demo
 
 ```
 ============================================================================
-  evt_000271   Rs 394.00   card_token   issuer=AUBANK
-  raw error: 'SERVER_ERROR' / 'server error'
+  evt_000641   Rs 1,382.00   upi_autopay   issuer=HDFC
+  raw error: 'ISO_51' / 'iso 51'
 ----------------------------------------------------------------------------
-  classified   gateway_error  (retry_only)
-  chose        retry_alt_rail on card
-  scheduled    2026-06-01T05:30:00+00:00  (+4.6h)
-  P(recover)   0.458     EV Rs 180.43
+  classified   insufficient_funds  (retry_only)
+  chose        retry_alt_rail on netbanking
+  scheduled    2026-06-01T14:03:14+00:00  (+12.0h)
+  P(recover)   0.373     EV Rs 515.15
   considered:
-    [BLK] retry_same_rail    EV Rs 244.44  p=0.620
+    [BLK] retry_same_rail    EV Rs 648.18  p=0.469
            -> emandate.pre_debit_notice: no pre-debit notification on record;
               24h notice required before re-presenting a mandate debit
-    [ok ] retry_alt_rail     EV Rs 180.43  p=0.458
-  NOT ALLOWED  retry_same_rail (EV Rs 244.44) blocked by emandate.pre_debit_notice
+    [ok ] retry_alt_rail     EV Rs 515.15  p=0.373
+  NOT ALLOWED  retry_same_rail (EV Rs 648.18) blocked by emandate.pre_debit_notice
   guardrails   11/11 gates passed
 ```
 
-The agent wanted the Rs 244 action. The RBI pre-debit notice rule vetoed it, so
-it took the Rs 180 one instead. **That Rs 64 gap is the price of the rule, and
+The agent wanted the Rs 648 action. The RBI pre-debit notice rule vetoed it, so
+it took the Rs 515 one instead. **That Rs 133 gap is the price of the rule, and
 it is recorded on every single decision** — because a system that hides what
 compliance costs cannot be reasoned about.
 
@@ -401,7 +401,7 @@ Reproducible: same seed → byte-identical results, asserted by
 under differing `PYTHONHASHSEED` and compares output byte-for-byte. CI runs that
 gate on every push, on Python 3.11 and 3.12.
 
-**Compliant escalation** — 20 gates: Visa/Mastercard re-presentment caps, RBI
+**Compliant escalation** — 21 gates: Visa/Mastercard re-presentment caps, RBI
 e-mandate 24h pre-debit notice and AFA threshold, TRAI quiet hours in IST, DND,
 consent, comms frequency caps, spend caps, killswitch. Blocked comms are
 **rescheduled to 09:00, not discarded**. And because a mandate debit needs a
@@ -415,6 +415,15 @@ broken one lifts the hold, resumes action, and warrants escalation. A live
 promise is also a recovery signal to the model, and a history of broken ones
 discounts it. Inert unless the commitment is recorded — same opt-in discipline
 as churn. `scripts/promise_demo.py` shows the three states side by side.
+
+**Voice recovery** — voice is a real channel, not a text read aloud. Its scripts
+carry no clickable link, offer a keypad ("payment ke liye 1 dabaayein") and a
+do-not-call opt-out, are bounded by spoken seconds rather than characters, and
+hard-block anything that sounds like an OTP-phishing call. Voice is also held to
+a stricter time window than other comms. Placing the call is a carrier/TTS
+integration behind a `VoiceDispatcher` protocol, exactly as a hosted model sits
+behind `Provider` — the shipped dispatcher composes, validates, and dials
+nothing, because it will not pretend it made a call. `scripts/voice_demo.py`.
 
 **Stopping rules** — terminal classes stop permanently; per-class attempt caps;
 EV and probability floors; 21-day age cap; deadline enforcement; 3 actions per
@@ -475,7 +484,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-382 tests at 95% coverage is a statement about lines executed, not about whether
+400 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -748,7 +757,7 @@ recoup/
 ├── issuer_health.py  Wilson-bounded outage detection, strictly causal
 ├── propensity.py     Features + logistic regression + calibration
 ├── policy.py         EV ranking, candidate generation, 3 baselines
-├── guardrails.py     20 gates. Absolute veto. No model, ever
+├── guardrails.py     21 gates. Absolute veto. No model, ever
 ├── policypack.py     Validated loader for the TOML rule pack
 ├── ledger.py         Hash-chained append-only audit trail
 ├── ingest.py         Razorpay webhooks → RiskEvent, HMAC verified
@@ -765,7 +774,7 @@ scripts/                   stability · learning_curve · ablation · sensitivit
                            health_signal · tune_* · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     382 tests, incl. adversarial + no-leakage
+tests/                     400 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -778,7 +787,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 382 tests
+pytest tests/ -q                         # 400 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?

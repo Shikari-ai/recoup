@@ -67,6 +67,11 @@ class PolicyPack:
     #: "use the built-in table", which is the common case -- a merchant with
     #: real retention data overrides it here rather than in code.
     churn_base: dict[str, float] = field(default_factory=dict)
+    #: Optional tighter daytime window for voice calls, which are more
+    #: intrusive than messages. None means voice follows the general comms
+    #: window -- the default and inert case; a stricter pack narrows it.
+    voice_start_local: int | None = None
+    voice_end_local: int | None = None
     source_path: str = ""
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
@@ -142,6 +147,10 @@ def load_pack(path: str | Path | None = None) -> PolicyPack:
         emandate_rails=frozenset(str(x) for x in emandate["applies_to"]),
         quiet_start_local=int(comms["quiet_hours_start_local"]),
         quiet_end_local=int(comms["quiet_hours_end_local"]),
+        voice_start_local=(int(comms["voice_hours_start_local"])
+                           if "voice_hours_start_local" in comms else None),
+        voice_end_local=(int(comms["voice_hours_end_local"])
+                         if "voice_hours_end_local" in comms else None),
         tz_offset_minutes=int(comms["timezone_offset_minutes"]),
         max_messages_per_7d=int(comms["max_messages_per_7d"]),
         min_gap_between_sends_h=int(comms["min_gap_between_sends_h"]),

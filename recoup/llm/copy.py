@@ -247,6 +247,12 @@ class MessageComposer:
             "en_IN", "hi_IN", "hinglish"
         ) else "en_IN"
 
+        # Voice is not a text message read aloud. It has no link, offers a
+        # keypad, and is bounded by spoken seconds rather than characters, so it
+        # composes and validates on its own path. See recoup/voice.py.
+        if channel is Channel.VOICE:
+            return self._compose_voice(event, cls, locale)
+
         if not use_model:
             return self._template(event, cls, channel, locale, "template")
 
@@ -293,6 +299,21 @@ class MessageComposer:
                 fallback.text, channel, locale, "template", tuple(problems)
             )
         return ComposedMessage(text, channel, locale, "llm")
+
+    def _compose_voice(
+        self, event: RiskEvent, cls: Classification, locale: str
+    ) -> ComposedMessage:
+        """Compose and validate a spoken voice script.
+
+        Lazy import breaks a cycle: voice.py reuses this module's BANNED
+        patterns, so it cannot be imported at the top of this file.
+        """
+        from ..voice import compose_voice_script, validate_voice
+
+        script = compose_voice_script(event, cls, locale)
+        problems = validate_voice(script)
+        source = "voice" if not problems else "voice-rejected"
+        return ComposedMessage(script.spoken, Channel.VOICE, locale, source, tuple(problems))
 
     def _template(
         self, event: RiskEvent, cls: Classification, channel: Channel, locale: str, source: str

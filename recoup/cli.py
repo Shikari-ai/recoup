@@ -170,7 +170,18 @@ def cmd_audit(args: argparse.Namespace) -> int:
 def cmd_verify(args: argparse.Namespace) -> int:
     from .ledger import AuditLedger, verify_entries
 
-    entries = AuditLedger.load(args.file)
+    # A reviewer pointing this at the wrong path should get a one-line reason,
+    # not a stack trace. A missing or malformed ledger is a usage problem
+    # (exit 2), distinct from a chain that loads but fails verification (exit 1).
+    try:
+        entries = AuditLedger.load(args.file)
+    except FileNotFoundError:
+        _p(f"error: no ledger file at {args.file}")
+        return 2
+    except (OSError, ValueError) as exc:
+        _p(f"error: could not read {args.file} as a ledger: {exc}")
+        return 2
+
     v = verify_entries(entries)
     if v.ok:
         _p(f"OK  {v.entries} records, chain intact")

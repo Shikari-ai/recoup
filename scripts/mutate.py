@@ -238,6 +238,22 @@ MUTATIONS: list[tuple[str, str, str, str]] = [
      "    f[\"promise_active\"] = 1.0 if pstate is PromiseState.ACTIVE else 0.0",
      "    f[\"promise_active\"] = 0.0",
      "blind the model to a live promise-to-pay"),
+
+    # -- voice recovery -----------------------------------------------------
+    ("recoup/voice.py",
+     "    if re.search(r\"https?://|\\{link\\}\", spoken.lower()):",
+     "    if False:",
+     "let a voice script carry a link nobody can click"),
+
+    ("recoup/voice.py",
+     "    if \"9\" not in script.dtmf:",
+     "    if False:",
+     "drop the do-not-call opt-out from voice scripts"),
+
+    ("recoup/guardrails.py",
+     "        if not (start <= h < end):",
+     "        if False:",
+     "call outside the permitted voice-hours window"),
 ]
 
 

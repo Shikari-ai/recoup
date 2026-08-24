@@ -372,6 +372,35 @@ class GuardrailEngine:
             )
         return GuardrailVerdict("comms.quiet_hours", True)
 
+    def _comms_voice_hours(self, e, c, a, now) -> GuardrailVerdict | None:
+        """A voice call is more intrusive than a text, so it gets a tighter window.
+
+        Quiet hours already bar every channel overnight. Voice is held to a
+        stricter daytime band on top of that -- a phone call at 8pm lands harder
+        than an SMS at 8pm, and TRAI treats commercial calls more restrictively
+        than messages. The window defaults in code so packs written before voice
+        existed load unchanged.
+        """
+        if a.kind not in COMMS_ACTIONS or a.channel is not Channel.VOICE:
+            return None
+        # Default: voice follows the same hours as every other message, so the
+        # gate is inert unless a pack deliberately narrows it. quiet_end is when
+        # messaging opens for the day, quiet_start is when it closes. A stricter
+        # pack sets voice_start_local / voice_end_local inside that band.
+        start = (self.pack.voice_start_local
+                 if self.pack.voice_start_local is not None else self.pack.quiet_end_local)
+        end = (self.pack.voice_end_local
+               if self.pack.voice_end_local is not None else self.pack.quiet_start_local)
+        h = local_hour(a.execute_at, self.pack.tz_offset_minutes)
+        if not (start <= h < end):
+            return GuardrailVerdict(
+                "comms.voice_hours",
+                False,
+                f"{h:02d}:00 local is outside the voice-call window "
+                f"{start:02d}:00-{end:02d}:00 (voice is stricter than other comms)",
+            )
+        return GuardrailVerdict("comms.voice_hours", True, f"{h:02d}:00")
+
     def _comms_frequency(self, e, c, a, now) -> GuardrailVerdict | None:
         if a.kind not in COMMS_ACTIONS:
             return None
@@ -459,6 +488,7 @@ class GuardrailEngine:
         _comms_consent,
         _comms_dnd,
         _comms_quiet_hours,
+        _comms_voice_hours,
         _comms_frequency,
         _comms_min_gap,
         _merchant_daily_actions,
