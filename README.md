@@ -484,7 +484,7 @@ you would anchor in a WORM bucket to close that gap.
 
 ### The tests are checked too
 
-447 tests at 95% coverage is a statement about lines executed, not about whether
+448 tests at 95% coverage is a statement about lines executed, not about whether
 a *wrong* implementation would be caught. `scripts/mutate.py` answers the second
 question: it disables one safety-critical behaviour at a time in a scratch copy
 and runs the suite. Every mutation should turn it red.
@@ -634,10 +634,20 @@ curl -X POST localhost:8000/webhook/razorpay -H 'Content-Type: application/json'
 ```
 
 That is the other half of the pre-dispatch state guard: the guard refuses to act
-on a receivable that settled out-of-band, and this is how it finds out. Every
-declared event type, payment method and taxonomy error code — 70 of them — is
-driven end to end in the test suite, including the assertion that a terminal
-failure never produces an action.
+on a receivable that settled out-of-band, and this is how it finds out.
+
+**The whole declared input surface is now driven, not just the happy path.** All
+70 taxonomy error codes run ingest → classify → decide in one test, including
+the assertion that matters most: a terminal failure never produces an action.
+Every declared event type and payment method is parametrised. The signature
+boundary is tested adversarially — wrong digest, empty, absent, case-flipped,
+whitespace-padded, truncated, tampered body — plus an `ast` test asserting
+constant-time comparison, because `hmac.compare_digest(a, b)` and `a == b`
+accept exactly the same inputs and no behavioural test can tell them apart.
+Redelivery is tested too, since Razorpay retries on any non-2xx: six identical
+deliveries must authorise exactly one dispatch. And comms fatigue is checked
+*across* receivables, because a customer with three failing payments can get
+three individually-correct decisions and still be buried.
 
 The dashboard shows the arm comparison, model reliability, live decision feed
 and ledger integrity.
@@ -833,7 +843,7 @@ scripts/                   stability · learning_curve · ablation · ceiling
                            mutate · health_signal · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
-tests/                     447 tests, incl. adversarial + no-leakage
+tests/                     448 tests, incl. adversarial + no-leakage
 ```
 
 ### Commands
@@ -846,7 +856,7 @@ python -m recoup triage                  # LLM triage on unmapped codes
 python -m recoup verify <ledger.jsonl>   # check the hash chain
 python -m recoup sensitivity             # 23 perturbed worlds — does it hold?
 python -m recoup serve                   # dashboard + webhook API
-pytest tests/ -q                         # 447 tests
+pytest tests/ -q                         # 448 tests
 python scripts/stability.py --seeds 30   # multi-seed variance
 python scripts/learning_curve.py         # how much data does it need?
 python scripts/ablation.py               # which part is doing the work?

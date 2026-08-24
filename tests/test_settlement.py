@@ -382,3 +382,69 @@ def test_signature_comparison_is_constant_time():
             assert "signature" not in names or "compare_digest" in names, (
                 f"non-constant-time comparison of the signature: {names}"
             )
+
+
+# ---------------------------------------------------------------------------
+# One customer, many receivables
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.slow
+def test_comms_fatigue_holds_across_separate_receivables():
+    """The cap protects a person, not a receivable.
+
+    Every guardrail test drives a single receivable, but a real customer can
+    have several failing at once — a subscription, an invoice, an abandoned
+    cart. Each decision can be individually correct and the customer still gets
+    buried. The cap is keyed on the customer for exactly that reason, and this
+    is the test that the keying actually works end to end.
+    """
+    from datetime import timedelta
+
+    from recoup.domain import Channel, CustomerContext, Rail, RiskEvent, RiskKind
+    from recoup.guardrails import GuardrailEngine
+    from recoup.issuer_health import IssuerHealthMonitor
+    from recoup.policy import RecoveryPolicy
+    from recoup.policypack import load_pack
+    from recoup.propensity import LogisticModel
+    from recoup.store import ActionLogEntry, RecoveryStore
+
+    pack = load_pack()
+    store = RecoveryStore()
+    pol = RecoveryPolicy(
+        pack=pack, model=LogisticModel(), store=store,
+        health=IssuerHealthMonitor(), guardrails=GuardrailEngine(pack, store), seed=7,
+    )
+
+    sent = 0
+    for i in range(10):
+        cust = CustomerContext(
+            "cust_same",
+            contactable=(Channel.SMS, Channel.WHATSAPP),
+            comms_sent_7d=sent,
+        )
+        # Abandoned checkouts can only be recovered by contact, so this forces
+        # the comms path rather than letting the engine switch rails silently.
+        ev = RiskEvent(
+            event_id=f"ab_{i}", merchant_id="m1", kind=RiskKind.CHECKOUT_ABANDONED,
+            amount_paise=350000, rail=Rail.UPI_COLLECT,
+            occurred_at=NOW + timedelta(hours=i * 8), customer=cust,
+            error_code="checkout_abandoned",
+        )
+        at = ev.occurred_at + timedelta(minutes=5)
+        d = pol.decide(ev, at)
+        if d.action.kind.value in (
+            "send_nudge", "send_payment_link", "request_instrument_update",
+        ):
+            sent += 1
+            store.record(ActionLogEntry(
+                event_id=ev.event_id, merchant_id="m1", customer_id="cust_same",
+                instrument_key="k", action_kind=d.action.kind, executed_at=at,
+                channel=d.action.channel, cost_paise=55,
+            ))
+
+    assert sent <= pack.max_messages_per_7d, (
+        f"one customer received {sent} messages across 10 receivables; the "
+        f"{pack.max_messages_per_7d}-message cap is not binding across events"
+    )
+    assert sent > 0, "no messages at all means this test proved nothing"
