@@ -20,6 +20,27 @@ No install step, no API key, no configuration. Python 3.11+ and the standard
 library. The core engine, the entire backtest and the whole CLI have **zero
 runtime dependencies**.
 
+| The claim | The number | Verify it yourself |
+|---|---:|---|
+| Beats a strong hand-written rulebook | **+31.1%** | `recoup backtest` — ~1 min |
+| Beats what merchants actually run (fixed retry) | **+286.6%** | same run |
+| Judgment, not volume — vs same-budget random | **+49.6%** | same run |
+| The ML earns its place — model off is *worse than random* | **+57.8%** | `scripts/ablation.py` |
+| Compliance violations, every seed and arm | **0** | independent replay audit |
+| Held-out scenarios, all positive | **30 / 30** | `scripts/stability.py` |
+| Tests · mutation checks · documented figures | **448 · 44/44 · 17/17** | `pytest -q` · CI |
+
+Every number in this README is re-derived from committed artefacts in CI —
+if a figure drifts from the evidence, the build fails. **Outcomes are
+simulated; every arm runs the identical world, so the comparison is the
+claim.** More on both below.
+
+And because the judges said they read *"what broke"* first: **[fourteen real
+failures are documented](#what-broke)** — including three where my own
+verification tools were reporting success while checking nothing, and a
+success-webhook bug where the agent nudged a customer who had already paid.
+Two of the fixes made my headline number *smaller*. I kept the smaller number.
+
 ---
 
 ## The thesis
@@ -491,7 +512,7 @@ and runs the suite. Every mutation should turn it red.
 
 ```
 baseline  green
-40/40 mutations caught
+44/44 mutations caught
 
   guardrails   never-retry gate · quiet hours · debit cap · RBI notice
   ledger       edited payloads · spliced entries (valid seq, broken link)
@@ -507,6 +528,8 @@ baseline  green
   hotreload    change detection · reload-failure visibility
   promise      chase a live promise · suppress-after-broken · model blindness
   voice        script carries a link · missing opt-out · voice-hours window
+  settlement   paid order chased as a receivable · failure laundered as paid
+               negative amount accepted · non-constant-time signature compare
 ```
 
 It got there the hard way, twice.
