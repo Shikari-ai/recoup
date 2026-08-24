@@ -8,3 +8,93 @@ Mutation spot-check: every row SHOULD be caught (the suite turns red).
   1  caught     disable the never-retry gate (terminal failures become actionable)
                 tests/test_adversarial.py::test_auditor_detects_a_planted_terminal
   2  caught     disable quiet hours (3am messages allowed)
+                tests/test_adversarial.py::test_adversarial_respects_quiet_hours_o
+  3  caught     raise the debit cap 100x
+                tests/test_guardrails.py::test_debit_cap_binds_independently_of_th
+  4  caught     skip the RBI pre-debit notice requirement
+                tests/test_adversarial.py::test_adversarial_policy_executes_nothin
+  5  caught     stop detecting edited ledger payloads
+                tests/test_cli.py::test_verify_rejects_a_tampered_chain
+  6  caught     stop detecting spliced ledger entries (valid seq, broken back-link)
+                tests/test_ledger_and_taxonomy.py::test_prev_hash_break_is_detecte
+  7  caught     remove the terminal short-circuit in the policy
+                tests/test_policy.py::test_terminal_decisions_explain_themselves_i
+  8  caught     disable idempotency (a replayed debit executes twice)
+                tests/test_idempotency.py::test_first_claim_succeeds_and_second_fa
+  9  caught     accept any webhook signature
+                tests/test_api.py::test_webhook_enforces_the_signature_when_a_secr
+ 10  caught     stop blocking credential solicitation in customer messages
+                tests/test_llm.py::test_banned_content_is_rejected[Please share th
+ 11  caught     ignore the LLM triage confidence floor
+                tests/test_llm.py::test_low_confidence_is_rejected_and_stays_conse
+ 12  caught     charge churn for silent actions (retries, waits)
+                tests/test_hardening.py::test_non_comms_actions_are_free_even_when
+ 13  caught     remove the fatigue exponent cap
+                tests/test_hardening.py::test_fatigue_exponent_is_capped
+ 14  caught     price churn when LTV is unknown (breaks backward compatibility)
+                tests/test_hardening.py::test_unknown_ltv_makes_the_churn_term_van
+ 15  caught     make churn linear instead of compounding with contact
+                tests/test_hardening.py::test_churn_compounds_with_prior_contact
+ 16  caught     never open the circuit, however many failures
+                tests/test_hardening.py::test_breaker_opens_after_three_consecutiv
+ 17  caught     allow unlimited concurrent half-open probes (thundering herd)
+                tests/test_hardening.py::test_cooldown_moves_open_to_half_open_and
+ 18  caught     a failed probe does not reopen the circuit
+                tests/test_hardening.py::test_a_failed_probe_stops_further_probes_
+ 19  caught     call the API even when the circuit is open (no fail-fast)
+                tests/test_hardening.py::test_open_circuit_serves_the_offline_fall
+ 20  caught     execute the AGENT's action instead of the legacy one
+                tests/test_hardening.py::test_shadow_returns_the_legacy_action_and
+ 21  caught     let an agent crash escape the shadow boundary
+                tests/test_hardening.py::test_shadow_fails_open_when_the_agent_cra
+ 22  caught     never report divergence between the two paths
+                tests/test_hardening.py::test_shadow_returns_the_legacy_action_and
+ 23  caught     send cold-start merchants to the model anyway
+                tests/test_router_and_idempotency.py::test_cold_start_sends_everyt
+ 24  caught     send 100% of warm-up traffic to the model instead of 20%
+                tests/test_router_and_idempotency.py::test_warmup_splits_roughly_e
+ 25  caught     make routing random instead of sticky per receivable
+                tests/test_api.py::test_webhook_resolves_a_novel_code_through_tria
+ 26  caught     accept every claim (duplicate dispatches execute twice)
+                tests/test_api.py::test_repeated_webhook_delivery_authorises_exact
+ 27  caught     drop the attempt number from the idempotency key
+                tests/test_router_and_idempotency.py::test_key_matches_the_documen
+ 28  caught     never expire keys (a legitimate re-attempt is blocked forever)
+                tests/test_router_and_idempotency.py::test_the_window_expires_afte
+ 29  caught     act on a receivable the customer already settled out-of-band
+                tests/test_settlement.py::test_a_settlement_closes_the_receivable_
+ 30  caught     act on a receivable the source of truth has never heard of
+                tests/test_state_guard_and_hotreload.py::test_an_unknown_receivabl
+ 31  caught     skip the dispatch-time state check in the runner
+                tests/test_state_guard_and_hotreload.py::test_the_runner_actually_
+ 32  caught     reparse the pack on every check even when unchanged
+                tests/test_state_guard_and_hotreload.py::test_quiet_hours_change_o
+ 33  caught     make the file fingerprint constant (edits never detected)
+                tests/test_state_guard_and_hotreload.py::test_quiet_hours_change_o
+ 34  caught     hide the reason a compliance pack failed to reload
+                tests/test_state_guard_and_hotreload.py::test_an_invalid_pack_is_r
+ 35  caught     chase a customer who has a live promise-to-pay
+                tests/test_promise.py::test_a_live_promise_blocks_a_debit_retry
+ 36  caught     keep suppressing after a promise is broken (never act on default)
+                tests/test_promise.py::test_a_lapsed_promise_is_broken_and_no_long
+ 37  caught     blind the model to a live promise-to-pay
+                tests/test_promise.py::test_an_active_promise_raises_the_recovery_
+ 38  caught     let a voice script carry a link nobody can click
+                tests/test_voice.py::test_validate_rejects_a_link_in_a_voice_scrip
+ 39  caught     drop the do-not-call opt-out from voice scripts
+                tests/test_voice.py::test_validate_rejects_a_missing_opt_out
+ 40  caught     call outside the permitted voice-hours window
+                tests/test_voice.py::test_strict_pack_enforces_a_tighter_voice_win
+ 41  caught     treat a paid order as a receivable (chase a customer who paid)
+                tests/test_api.py::test_webhook_rejects_malformed_payloads_with_40
+ 42  caught     let a failure event be laundered into a settlement
+                tests/test_settlement.py::test_settlement_refuses_a_failure_event
+ 43  caught     accept a negative amount (crashes the model with a math domain error)
+                tests/test_settlement.py::test_a_non_positive_amount_is_refused[-1
+ 44  caught     compare signatures non-constant-time (timing side channel)
+                tests/test_settlement.py::test_signature_comparison_is_constant_ti
+------------------------------------------------------------------------------
+
+44/44 mutations caught
+
+Every safety-critical mutation was caught.
