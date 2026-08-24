@@ -30,6 +30,11 @@ from ..domain import rupees
 
 
 def build_app(seed: int = 42, events: int = 4000):  # noqa: C901 - wiring
+    """Build the FastAPI app: a warmed policy, the webhook, and read-only views.
+
+    Optional -- requires the ``api`` extra. The core engine and backtest run
+    without it. ``events`` sizes the scenario the live endpoints are warmed on.
+    """
     from contextlib import asynccontextmanager
 
     from fastapi import FastAPI, Header, Request

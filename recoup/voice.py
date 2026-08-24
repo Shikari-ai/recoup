@@ -167,7 +167,9 @@ class VoiceDispatcher(Protocol):
     captures the keypad response; this project ships only the null one.
     """
 
-    def place(self, event: RiskEvent, script: VoiceScript) -> str: ...
+    def place(self, event: RiskEvent, script: VoiceScript) -> str:
+        """Place the call and return a status. Implementations validate first."""
+        ...
 
 
 @dataclass
@@ -184,6 +186,12 @@ class NullVoiceDispatcher:
     placed: list[tuple[str, VoiceScript]] = field(default_factory=list)
 
     def place(self, event: RiskEvent, script: VoiceScript) -> str:
+        """Validate the script and record it; dial nothing.
+
+        Returns ``"rejected: ..."`` for a script that fails validation, and a
+        status naming the offline dispatcher otherwise -- never a status that
+        could be mistaken for a call that actually connected.
+        """
         problems = validate_voice(script)
         if problems:
             return f"rejected: {'; '.join(problems)}"

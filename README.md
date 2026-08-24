@@ -491,7 +491,7 @@ and runs the suite. Every mutation should turn it red.
 
 ```
 baseline  green
-22/22 mutations caught
+40/40 mutations caught
 
   guardrails   never-retry gate · quiet hours · debit cap · RBI notice
   ledger       edited payloads · spliced entries (valid seq, broken link)
@@ -501,6 +501,12 @@ baseline  green
   churn        silent actions · fatigue cap · unknown-LTV inertness · compounding
   breaker      opens on failures · single probe · failed probe reopens · fail-fast
   shadow       legacy action executes · crash containment · divergence reporting
+  router       cold-start gate · warm-up split · sticky assignment
+  idempotency  duplicate dispatch · attempt-number key · unbounded retention
+  state guard  dispatch-time settlement check
+  hotreload    change detection · reload-failure visibility
+  promise      chase a live promise · suppress-after-broken · model blindness
+  voice        script carries a link · missing opt-out · voice-hours window
 ```
 
 It got there the hard way, twice.
@@ -623,8 +629,20 @@ and ledger integrity.
 
 ## Production hardening
 
-Three things this needed before it could run anywhere near real money. Each one
-is measured or provably inert rather than asserted.
+What this needed before it could run anywhere near real money. Every one is
+measured or provably inert rather than asserted, and each is opt-in or
+default-off, so none moved a published figure — the seed-42 backtest arm table
+is byte-identical to the one measured before any of them existed.
+
+Four more, each a gate or a lever documented in
+**[COMPLIANCE.md](docs/COMPLIANCE.md)** and shown in the file tree above:
+**cold-start routing** (`router.py`) sends traffic to the rulebook until a
+merchant has the history to earn the model; **idempotency** (`idempotency.py`)
+makes one logical action dispatch exactly once; a **pre-dispatch state guard**
+(`state_guard.py`) aborts if the customer settled out-of-band since the decision;
+and **hot-reloading compliance packs** (`hotreload.py`) apply a regulator's
+change without a restart, rejecting an invalid pack rather than letting a typo
+disable the guardrails. The three below are the ones worth reading in full.
 
 ### Churn is priced, not just capped
 
@@ -759,19 +777,30 @@ recoup/
 ├── policy.py         EV ranking, candidate generation, 3 baselines
 ├── guardrails.py     21 gates. Absolute veto. No model, ever
 ├── policypack.py     Validated loader for the TOML rule pack
+├── churn.py          Prices P(churn) × LTV into the EV objective
+├── promise.py        Promise-to-pay: honour a live one, act on a broken one
+├── voice.py          Spoken-script recovery, keypad + opt-out, honest seam
+├── router.py         Cold-start routing: rulebook until data earns the model
+├── idempotency.py    One logical action dispatches exactly once
+├── state_guard.py    Last-moment settled-out-of-band check before dispatch
+├── hotreload.py      Compliance packs reload on edit, no restart
+├── shadow.py         Run the agent beside the rulebook, execute only the old
 ├── ledger.py         Hash-chained append-only audit trail
+├── store.py          Recovery-state counters the guardrails read
 ├── ingest.py         Razorpay webhooks → RiskEvent, HMAC verified
+├── cli.py            The `python -m recoup` command surface
 ├── sim/              Latent world + generator. Quarantined from the agent
 ├── eval/             Runner, backtest protocol, sensitivity, reporting
-├── llm/              Triage + message composition. Offline by default
+├── llm/              Triage, message composition, circuit breaker. Offline default
 └── api/              Dashboard + live webhook endpoint
 
 policies/in_default.toml   Every compliance limit, as data not code
 policies/strict.toml       A conservative pack — same engine, tighter rules
 docs/                      ARCHITECTURE · COMPLIANCE · EVALUATION
                            AI_JUDGMENT · ENGINEERING_LOG
-scripts/                   stability · learning_curve · ablation · sensitivity
-                           health_signal · tune_* · verify_docs · verify_numbers
+scripts/                   stability · learning_curve · ablation · ceiling
+                           churn_sensitivity · promise_demo · voice_demo
+                           mutate · health_signal · verify_docs · verify_numbers
 results/                   backtest · stability · sensitivity · curve · ceiling
                            ablation · health-signal · mutation output
 tests/                     400 tests, incl. adversarial + no-leakage

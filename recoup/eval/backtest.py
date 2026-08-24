@@ -151,6 +151,13 @@ def backtest(
     compose_messages: bool = True,
     verbose: bool = True,
 ) -> BacktestResult:
+    """Run the five-arm held-out comparison and return the full result.
+
+    Generates a scenario, splits it chronologically, trains the model on the
+    train half, and evaluates every policy arm on the held-out half against
+    identical events, guardrails, costs and RNG draws. This is the entry
+    point behind ``python -m recoup backtest`` and every headline figure.
+    """
     config = config or ScenarioConfig()
     pack = pack or load_pack()
 

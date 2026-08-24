@@ -289,6 +289,7 @@ def cmd_policy(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Assemble the argument parser for every ``recoup`` subcommand."""
     ap = argparse.ArgumentParser(
         prog="recoup",
         description="Autonomous revenue recovery agent for Razorpay merchants.",
@@ -375,6 +376,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     from .llm.base import ProviderUnavailable
+    """CLI entry point. Returns a process exit code.
+
+    A missing-provider configuration prints a one-line fix and exits 2
+    rather than a traceback; everything else dispatches to a cmd_* handler.
+    """
 
     _configure_stdout()
     args = build_parser().parse_args(argv)
