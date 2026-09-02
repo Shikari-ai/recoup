@@ -1,6 +1,6 @@
 # What broke, and how I got out
 
-Eleven real failures from building this, in the order they happened.
+Fifteen real failures from building this, in the order they happened.
 
 The pattern that matters: **four of them invalidated results I had already
 written down, and every one of those four was silent.** Nothing raised, nothing
@@ -733,6 +733,60 @@ authorisation count.
 **How it was found.** Not by a test. By asking what Razorpay actually *does* —
 it retries — and then doing that. The unit tests all used a single delivery,
 because that is the shape you write when you are thinking about the happy path.
+
+## 15. A test that passed for three weeks failed on a date nobody chose
+
+**What happened.** On 2026-08-27, with no code change since the previous green
+run, one test failed:
+
+```
+FAILED tests/test_api.py::test_webhook_resolves_a_novel_code_through_triage
+assert 'llm:' in 'every actionable candidate was blocked by:
+                  stopping.max_days_pursuing -> stopping'
+```
+
+**Cause.** The webhook fixture carried an absolute epoch stamp:
+
+```python
+"created_at": 1786000000,   # 2026-08-06T07:06:40Z
+```
+
+The engine ages every receivable against the real clock, and the default pack
+writes one off at ``max_days_pursuing = 21``. On 2026-08-27 that fixture turned
+21.1 days old, crossed the cap, and every candidate action was blocked. The
+decision came back a write-off, so the rationale no longer carried the ``llm:``
+string the test asserts on.
+
+The guardrail behaved exactly as specified. The fixture had an expiry date and
+nobody wrote it down.
+
+**The part that stings.** CI runs on ``push`` and ``pull_request`` — there is no
+scheduled run. A test whose failure is triggered by the calendar rather than by
+a diff is invisible to that trigger: the repository can go red while sitting
+untouched, and the first person to find out is whoever runs the suite next. This
+commit was green when it was pushed and red three weeks later, unchanged. "All
+tests pass" is a statement about a moment, not a property of a commit.
+
+**The fix.** Fixtures now mint their stamp relative to now:
+
+```python
+def fresh_ts(seconds_ago: int = 3600) -> int:
+    return int(time.time()) - seconds_ago
+```
+
+Four stamps in ``tests/test_api.py`` moved to it. The stamps in
+``tests/test_settlement.py`` and ``tests/test_ingest.py`` were deliberately left
+alone: those tests verify signature checking and payload parsing, never reach the
+guardrails, and so cannot age out.
+
+Wall-clock fixtures also interact with the quiet-hours rule (21:00-09:00 IST), so
+the repaired test was re-run against simulated clocks at 14:00, 23:30 and 03:00
+IST. It holds at all three: the action chosen for ``issuer_down`` is
+``retry_alt_rail``, which is not a comms action and is not gated by quiet hours.
+
+**How it was found.** By running the suite by hand to confirm the test count
+quoted in a demo script. Nothing flagged it — the number in the document had
+simply stopped being true.
 
 ## Two smaller ones
 

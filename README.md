@@ -35,7 +35,7 @@ if a figure drifts from the evidence, the build fails. **Outcomes are
 simulated; every arm runs the identical world, so the comparison is the
 claim.** More on both below.
 
-And because the judges said they read *"what broke"* first: **[fourteen real
+And because the judges said they read *"what broke"* first: **[fifteen real
 failures are documented](#what-broke)** — including three where my own
 verification tools were reporting success while checking nothing, and a
 success-webhook bug where the agent nudged a customer who had already paid.
@@ -789,7 +789,7 @@ implemented here, because a fake queue would prove nothing.
 
 ## What broke
 
-Full account in **[docs/ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md)** — thirteen
+Full account in **[docs/ENGINEERING_LOG.md](docs/ENGINEERING_LOG.md)** — fifteen
 entries. The three that mattered were all **silent**, all passed every test I had
 at the time, and none of them announced themselves.
 

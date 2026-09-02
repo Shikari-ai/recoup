@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 
 import pytest
 
@@ -38,6 +39,20 @@ def client():
         yield c
 
 
+def fresh_ts(seconds_ago: int = 3600) -> int:
+    """An epoch stamp for a receivable that was minted just now.
+
+    A fixed absolute stamp here is a time bomb. The engine ages a receivable
+    against the real clock, so a hard-coded date eventually crosses
+    `stopping.max_days_pursuing` (21 days in the default pack) and every
+    candidate action is blocked -- the decision comes back as a write-off and
+    assertions about triage or dispatch fail, on a date nobody chose. These
+    fixtures are about the webhook path, not about write-off, so keep them
+    young; the write-off rule has its own tests in tests/test_guardrails.py.
+    """
+    return int(time.time()) - seconds_ago
+
+
 def payload(**over) -> dict:
     entity = {
         "id": "pay_QxL9mK2vRt8Zab",
@@ -54,7 +69,7 @@ def payload(**over) -> dict:
     entity.update(over.pop("entity", {}))
     base = {
         "event": "payment.failed",
-        "created_at": 1786000000,
+        "created_at": fresh_ts(),
         "payload": {"payment": {"entity": entity}},
     }
     base.update(over)
@@ -248,7 +263,7 @@ def test_a_settlement_webhook_closes_the_receivable_instead_of_chasing(client):
     """
     paid = {
         "event": "order.paid",
-        "created_at": 1786000000,
+        "created_at": fresh_ts(),
         "payload": {"order": {"entity": {
             "id": "pay_settled", "amount": 249900, "currency": "INR",
             "status": "paid", "method": "upi", "customer_id": "c1",
@@ -264,7 +279,7 @@ def test_a_settlement_webhook_closes_the_receivable_instead_of_chasing(client):
 def test_a_settlement_with_no_amount_is_a_clean_400(client):
     bad = {
         "event": "order.paid",
-        "created_at": 1786000000,
+        "created_at": fresh_ts(),
         "payload": {"order": {"entity": {"id": "x", "currency": "INR"}}},
     }
     r = client.post("/webhook/razorpay", json=bad)
@@ -284,7 +299,7 @@ def test_repeated_webhook_delivery_authorises_exactly_one_dispatch(client):
     """
     body = {
         "event": "payment.failed",
-        "created_at": 1786000000,
+        "created_at": fresh_ts(),
         "payload": {"payment": {"entity": {
             "id": "pay_redelivered", "amount": 249900, "currency": "INR",
             "status": "failed", "method": "upi",
